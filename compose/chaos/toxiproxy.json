@@ -1,0 +1,8 @@
+[
+  {
+    "name": "store-simulator",
+    "listen": "0.0.0.0:18080",
+    "upstream": "store-simulator:8080",
+    "enabled": true
+  }
+]

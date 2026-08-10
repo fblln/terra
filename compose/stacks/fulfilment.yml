@@ -1,0 +1,71 @@
+# The application stack. In a real project these are your Spring Boot services,
+# pinned by digest-resolvable tags. Here nginx stands in, so the demo boots in
+# seconds and needs nothing built.
+
+services:
+  gateway:
+    image: nginx:1.27-alpine
+    ports:
+      - "80"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1/"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 2s
+
+  # A service configured entirely through environment variables — the shape of a
+  # Spring Boot app with a long `environment:` block. Every value below comes from
+  # `vars:` in environments/fulfilment.yml, and can be overridden per run with
+  # TERRA_VAR_<NAME>. The service echoes them back on /config so a test can assert
+  # that what was declared is what arrived.
+  #
+  # Changing any of these changes the environment fingerprint, so `up` starts a new
+  # project rather than leaving you testing against the old configuration.
+  orders-api:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./compose/orders-api/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+    environment:
+      ORDERS_SERVICE_NAME: ${ORDERS_SERVICE_NAME:-orders-api}
+      ORDERS_VERSION: ${ORDERS_VERSION:-0.0.0}
+      ORDERS_LOG_LEVEL: ${ORDERS_LOG_LEVEL:-INFO}
+      ORDERS_PROFILE: ${ORDERS_PROFILE:-systest}
+      ORDERS_REGION: ${ORDERS_REGION:-eu-west-1}
+      ORDERS_MONGO_URI: ${ORDERS_MONGO_URI:-mongodb://mongodb:27017}
+      ORDERS_MONGO_DATABASE: ${ORDERS_MONGO_DATABASE:-systest}
+      ORDERS_KAFKA_BOOTSTRAP: ${ORDERS_KAFKA_BOOTSTRAP:-kafka:9092}
+      ORDERS_KAFKA_GROUP: ${ORDERS_KAFKA_GROUP:-orders-api}
+      ORDERS_TOPIC_SHIPMENTS: ${ORDERS_TOPIC_SHIPMENTS:-shipments}
+      ORDERS_TOPIC_STOCK: ${ORDERS_TOPIC_STOCK:-stock-moves}
+      ORDERS_CARRIER_BASE_URL: ${ORDERS_CARRIER_BASE_URL:-http://carrier-mock}
+      ORDERS_CARRIER_TIMEOUT_MS: ${ORDERS_CARRIER_TIMEOUT_MS:-2000}
+      ORDERS_RETRY_MAX_ATTEMPTS: ${ORDERS_RETRY_MAX_ATTEMPTS:-3}
+      ORDERS_RETRY_BACKOFF_MS: ${ORDERS_RETRY_BACKOFF_MS:-250}
+      ORDERS_RESERVATION_TTL_SECONDS: ${ORDERS_RESERVATION_TTL_SECONDS:-900}
+      ORDERS_MAX_ORDER_LINES: ${ORDERS_MAX_ORDER_LINES:-50}
+      ORDERS_PAGE_SIZE: ${ORDERS_PAGE_SIZE:-25}
+      ORDERS_FEATURE_SPLIT_SHIPMENTS: ${ORDERS_FEATURE_SPLIT_SHIPMENTS:-true}
+      ORDERS_FEATURE_BACKORDER: ${ORDERS_FEATURE_BACKORDER:-false}
+      ORDERS_FEATURE_EXPRESS_LANE: ${ORDERS_FEATURE_EXPRESS_LANE:-false}
+      ORDERS_METRICS_ENABLED: ${ORDERS_METRICS_ENABLED:-true}
+      ORDERS_TRACING_SAMPLE_RATE: ${ORDERS_TRACING_SAMPLE_RATE:-0.1}
+      ORDERS_AUDIT_RETENTION_DAYS: ${ORDERS_AUDIT_RETENTION_DAYS:-30}
+    ports:
+      - "80"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 2s

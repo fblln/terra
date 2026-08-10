@@ -1,0 +1,39 @@
+# The returns stack. Shares compose/base.yml with fulfilment — same Kafka, same
+# MongoDB, defined once — and adds a service fulfilment does not have.
+#
+# "Common" here means the *definition* is shared, not the running containers: each
+# environment is its own Compose project, so its infrastructure is its own. That is
+# deliberate — a test that restarts a broker must not restart anybody else's.
+
+services:
+  gateway:
+    image: nginx:1.27-alpine
+    ports:
+      - "80"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1/"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 2s
+
+  # Note the healthcheck host. Overriding `command` bypasses nginx's
+  # /docker-entrypoint.d/ scripts, one of which adds the IPv6 listener — so
+  # `localhost` resolves to ::1 and is refused while 127.0.0.1 serves fine.
+  # Healthchecks should not depend on an entrypoint side effect.
+  returns-api:
+    image: nginx:1.27-alpine
+    command: sh -c "echo returns-api > /usr/share/nginx/html/index.html && exec nginx -g 'daemon off;'"
+    ports:
+      - "80"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1/"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 2s

@@ -1,0 +1,26 @@
+# A programmable store simulator every test can configure at runtime.
+#
+# WireMock rather than a hand-written server: it already has a control API, request
+# matching, request recording and rule removal. The harness wraps it so tests never
+# see WireMock — if this is later replaced by a real behavioural simulator with a
+# controllable clock, only SimulatorProbe changes.
+#
+# Crucially, configuring it does NOT restart anything. Rules are registered over
+# HTTP and scoped to the test that registered them, so a hundred tests can hold a
+# hundred different opinions about the same simulator at the same time.
+
+services:
+  store-simulator:
+    image: wiremock/wiremock:3.9.1
+    # The journal is bounded rather than pruned per test: without header scoping a
+    # test cannot express "my requests" as a query, so nobody deletes anybody's.
+    command: ["--local-response-templating", "--disable-banner", "--max-request-journal-entries", "10000"]
+    ports:
+      - "8080"
+    healthcheck:
+      # The image has neither curl nor wget, but it does have bash.
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/8080' || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+      start_period: 3s

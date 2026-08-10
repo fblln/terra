@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# terra — thin launcher. All logic is in cli/, all container lifecycle is Docker.
+#
+# Rebuilds before every invocation: Gradle's up-to-date check costs about a second
+# and the alternative is running yesterday's binary against today's source, which
+# costs considerably more than that. TERRA_NO_BUILD=1 skips it.
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+bin="$here/cli/build/install/cli/bin/cli"
+
+if [[ "${TERRA_NO_BUILD:-}" != "1" ]]; then
+  (cd "$here" && ./gradlew --quiet :cli:installDist)
+fi
+
+exec "$bin" "$@"

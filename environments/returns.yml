@@ -1,0 +1,29 @@
+# A second environment. Same base.yml as fulfilment, different stack — which is
+# what a compose overlay is for: the shared half is written once.
+#
+# It is a different topology, so it fingerprints differently, so it is a different
+# Compose project. systest starts it, runs the tests that asked for it, stops it,
+# and moves on.
+
+compose:
+  - compose/base.yml
+  - compose/stacks/returns.yml
+
+services:
+  gateway: 80
+  returns-api: 80
+  mongodb: 27017
+  kafka: 9092
+
+hostPorts:
+  kafka: 9092
+
+health: gateway:80/
+
+capabilities:
+  - kafka
+  - mongo
+  - returns
+
+vars:
+  SERVICE_VERSION: local

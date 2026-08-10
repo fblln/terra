@@ -1,0 +1,92 @@
+# A logical environment. Tests name this file, never the compose files below, so
+# infrastructure layout never leaks into test classes.
+#
+# The topology must stay startable by hand — whatever terra runs, this works:
+#   KAFKA_HOST_PORT=29092 docker compose \
+#     -f compose/base.yml -f compose/stacks/fulfilment.yml up
+
+compose:
+  - compose/base.yml
+  - compose/stacks/fulfilment.yml
+  - compose/features/simulator.yml
+  - compose/features/chaos.yml
+
+# service -> container port. systest looks up the ephemeral host port Docker chose
+# and writes it into the descriptor. Never publish fixed host ports here: two
+# environments must be able to coexist, which is what makes attach-and-run work.
+services:
+  gateway: 80
+  orders-api: 80
+  store-simulator: 8080
+  toxiproxy: 8474                 # control API
+  simulator-proxied@toxiproxy: 18080   # store-simulator, reachable through the proxy
+  mongodb: 27017
+  kafka: 9092
+
+# Services that hand their own address to clients and therefore need a known port.
+# systest derives one from the fingerprint — stable per environment, distinct across
+# environments — and exposes it to compose as KAFKA_HOST_PORT.
+hostPorts:
+  kafka: 9092
+
+health: gateway:80/
+
+capabilities:
+  - kafka
+  - mongo
+  - orders
+  - simulator
+  - chaos
+
+# Checkpointed automatically at the start of every test, and created by migration if
+# absent, so `shouldBePublished` needs neither a mark nor a topic to exist first.
+topics:
+  - shipments
+  - stock-moves
+
+# The service configuration, in one place.
+#
+# This is the shape a Spring Boot service takes: a long, boring list. Keeping it
+# here rather than in the compose file means the topology stays generic and the
+# *environment* owns what the services are configured to be — which is the thing a
+# test can then assert on.
+#
+# Precedence is environment variable -> this file -> the default in the compose
+# file. Override one for a single run without editing anything:
+#
+#   TERRA_VAR_ORDERS_LOG_LEVEL=DEBUG ./terra run fulfilment
+#
+# Any change here changes the fingerprint, so `up` starts a new project instead of
+# leaving you testing yesterday's configuration.
+vars:
+  SERVICE_VERSION: local
+
+  ORDERS_SERVICE_NAME: orders-api
+  ORDERS_VERSION: 1.17.4
+  ORDERS_LOG_LEVEL: INFO
+  ORDERS_PROFILE: systest
+  ORDERS_REGION: eu-west-1
+
+  ORDERS_MONGO_URI: mongodb://mongodb:27017
+  ORDERS_MONGO_DATABASE: systest
+  ORDERS_KAFKA_BOOTSTRAP: kafka:9092
+  ORDERS_KAFKA_GROUP: orders-api
+  ORDERS_TOPIC_SHIPMENTS: shipments
+  ORDERS_TOPIC_STOCK: stock-moves
+
+  ORDERS_CARRIER_BASE_URL: http://toxiproxy:18080   # through the chaos proxy, on purpose
+  ORDERS_CARRIER_TIMEOUT_MS: "2000"
+  ORDERS_RETRY_MAX_ATTEMPTS: "3"
+  ORDERS_RETRY_BACKOFF_MS: "250"
+
+  ORDERS_RESERVATION_TTL_SECONDS: "900"
+  ORDERS_MAX_ORDER_LINES: "50"
+  ORDERS_PAGE_SIZE: "25"
+
+  ORDERS_FEATURE_SPLIT_SHIPMENTS: "true"
+  ORDERS_FEATURE_BACKORDER: "false"
+  ORDERS_FEATURE_EXPRESS_LANE: "false"
+
+  ORDERS_METRICS_ENABLED: "true"
+  ORDERS_TRACING_SAMPLE_RATE: "0.1"
+  ORDERS_AUDIT_RETENTION_DAYS: "30"

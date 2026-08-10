@@ -1,0 +1,58 @@
+# nginx substitutes ${VAR} from the container environment into this template at
+# startup (its own /docker-entrypoint.d/20-envsubst-on-templates.sh does it), which
+# makes this a stand-in for a Spring Boot service reading a hundred env vars.
+#
+# /config echoes the configuration back so a test can assert that what the
+# environment file declared is what the service actually received. In a real service
+# this is /actuator/env or /actuator/configprops.
+
+server {
+    listen 80;
+
+    # Docker's embedded DNS, with resolution deferred to request time by putting the
+    # upstream in a variable. Without this nginx resolves at startup and refuses to
+    # boot if the dependency is not up yet — an ordering dependency we do not want.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    set $carrier "${ORDERS_CARRIER_BASE_URL}";
+
+    location = / {
+        default_type text/plain;
+        return 200 '${ORDERS_SERVICE_NAME}\n';
+    }
+
+    location = /config {
+        default_type application/json;
+        return 200 '{"serviceName":"${ORDERS_SERVICE_NAME}","version":"${ORDERS_VERSION}","logLevel":"${ORDERS_LOG_LEVEL}","profile":"${ORDERS_PROFILE}","region":"${ORDERS_REGION}","mongoUri":"${ORDERS_MONGO_URI}","mongoDatabase":"${ORDERS_MONGO_DATABASE}","kafkaBootstrap":"${ORDERS_KAFKA_BOOTSTRAP}","kafkaGroup":"${ORDERS_KAFKA_GROUP}","shipmentsTopic":"${ORDERS_TOPIC_SHIPMENTS}","stockTopic":"${ORDERS_TOPIC_STOCK}","carrierBaseUrl":"${ORDERS_CARRIER_BASE_URL}","carrierTimeoutMs":${ORDERS_CARRIER_TIMEOUT_MS},"retryMaxAttempts":${ORDERS_RETRY_MAX_ATTEMPTS},"retryBackoffMs":${ORDERS_RETRY_BACKOFF_MS},"reservationTtlSeconds":${ORDERS_RESERVATION_TTL_SECONDS},"maxOrderLines":${ORDERS_MAX_ORDER_LINES},"pageSize":${ORDERS_PAGE_SIZE},"featureSplitShipments":${ORDERS_FEATURE_SPLIT_SHIPMENTS},"featureBackorder":${ORDERS_FEATURE_BACKORDER},"featureExpressLane":${ORDERS_FEATURE_EXPRESS_LANE},"metricsEnabled":${ORDERS_METRICS_ENABLED},"tracingSampleRate":"${ORDERS_TRACING_SAMPLE_RATE}","auditRetentionDays":${ORDERS_AUDIT_RETENTION_DAYS}}';
+    }
+
+    # The dependency call. ORDERS_CARRIER_BASE_URL points at the chaos proxy, so a
+    # test can sever this hop while the dependency itself stays healthy.
+    location = /carrier {
+        proxy_pass $carrier/orders;
+        proxy_connect_timeout ${ORDERS_CARRIER_TIMEOUT_MS}ms;
+        proxy_send_timeout ${ORDERS_CARRIER_TIMEOUT_MS}ms;
+        proxy_read_timeout ${ORDERS_CARRIER_TIMEOUT_MS}ms;
+
+        # Degrade deliberately instead of leaking the upstream's failure. This mapping
+        # is behaviour worth testing: a dependency being down should produce a stated
+        # contract, not whatever nginx felt like returning.
+        proxy_intercept_errors on;
+        error_page 502 503 504 = @carrier_unavailable;
+    }
+
+    location @carrier_unavailable {
+        default_type application/json;
+        return 503 '{"status":"DEGRADED","reason":"CARRIER_UNAVAILABLE"}';
+    }
+
+    # Liveness is about this service, not its dependencies. A service that reports
+    # itself unhealthy because something downstream is down gets restarted by its
+    # orchestrator for no reason, and takes the outage wider.
+    location = /health {
+        return 200 'ok\n';
+    }
+
+    location / {
+        return 404 '{"error":"no such route"}\n';
+    }
+}

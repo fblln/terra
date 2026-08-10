@@ -1,0 +1,27 @@
+# Toxiproxy, so a test can sever a connection for the length of a block.
+#
+# The proxy is always in the path and transparent while enabled, because you cannot
+# reroute a running service — the caller has to have been pointed at the proxy when it
+# started. That is a one-time topology decision, not a per-test one.
+#
+# Callers use the proxied address; the test still reaches the dependency directly, so
+# it can observe the dependency while the caller cannot reach it.
+
+services:
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.11.0
+    command: ["-host", "0.0.0.0", "-config", "/config/toxiproxy.json"]
+    volumes:
+      - ./compose/chaos/toxiproxy.json:/config/toxiproxy.json:ro
+    ports:
+      - "8474"      # control API
+      - "18080"     # store-simulator, proxied
+    depends_on:
+      store-simulator:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/toxiproxy-cli", "list"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+      start_period: 2s
