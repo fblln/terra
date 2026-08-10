@@ -83,7 +83,7 @@ object Compose {
         ProcessBuilder("docker", "compose", "-p", project, "down", "--volumes")
             .inheritIO().start().waitFor()
 
-    /** Every systest project Docker currently knows about. */
+    /** Every terra project Docker currently knows about. */
     fun projects(): List<String> =
         ProcessBuilder("docker", "compose", "ls", "--all", "--format", "json")
             .redirectErrorStream(true).start()

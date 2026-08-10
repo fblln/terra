@@ -66,11 +66,7 @@ class SimulatorST : SystemTest() {
             .containsExactlyInAnyOrder(ctx.ids.sku(), ctx.ids.sku(2))
     }
 
-    @SharedEnvTest
-    fun `asking for unscoped inspection is refused rather than quietly wrong`(ctx: TerraContext) {
-        val failure = runCatching { sim.ordersReceived() }.exceptionOrNull()
-
-        assertThat(failure).isNotNull()
-        assertThat(failure.toString()).contains("nothing to scope by")
-    }
+    // There used to be a test here asserting that unscoped inspection was refused at
+    // runtime. It is now refused by the compiler: `ordersReceived` takes the user it
+    // scopes by and has no default, so the unscoped call cannot be written.
 }

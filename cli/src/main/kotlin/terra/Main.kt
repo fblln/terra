@@ -30,8 +30,8 @@ Options
   --keep                 retain the environment if tests fail
 
 Tags are JUnit tag expressions, so these all work:
-  --tag inventory
-  --tag "inventory | shipping"
+  --tag smoke
+  --tag "checkout | search"
   --tag regression --exclude-tag flaky
 
 Exit codes
@@ -56,7 +56,7 @@ fun main(argv: Array<String>) {
             else -> fail("unknown command '$command'\n$USAGE")
         }
     } catch (e: IllegalStateException) {
-        System.err.println("systest: ${e.message}")
+        System.err.println("terra: ${e.message}")
         exitProcess(2)
     }
 }
@@ -249,7 +249,7 @@ private fun list(opts: Options) {
     println("\ntags: ${tags.joinToString(", ")}")
 }
 
-/** Reap every systest project no live descriptor points at. */
+/** Reap every terra project no live descriptor points at. */
 private fun prune() {
     val live = runCatching {
         Descriptors.path("x").parent.listDirectoryEntries("*.json")

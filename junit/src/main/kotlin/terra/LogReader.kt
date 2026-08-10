@@ -90,9 +90,7 @@ class LogReader(private val file: Path) {
                 """|^\s*Caused by:"""
         )
 
-        val ALLOWED = listOf(
-            Regex("""Connection refused.*retrying"""),
-            Regex("""org\.apache\.kafka\.clients\.NetworkClient.*disconnected"""),
-        )
+        /** Whatever the project declared in [Terra.allowedLogPatterns]. Empty by default. */
+        val ALLOWED: List<Regex> get() = Terra.allowedLogPatterns
     }
 }

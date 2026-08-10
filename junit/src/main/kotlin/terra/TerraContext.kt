@@ -36,10 +36,12 @@ class TerraContext(
     private val opened = mutableListOf<AutoCloseable>()
 
     val kafka: KafkaProbe by lazy {
-        KafkaProbe(endpoint("kafka"), ids.group(), descriptor.topics).also { opened += it }
+        KafkaProbe(endpoint(Terra.kafkaService), ids.group(), descriptor.topics).also { opened += it }
     }
 
-    val mongo: MongoProbe by lazy { MongoProbe(endpoint("mongodb"), ids).also { opened += it } }
+    val mongo: MongoProbe by lazy {
+        MongoProbe(endpoint(Terra.mongoService), ids, Terra.database).also { opened += it }
+    }
 
     /** HTTP against any service the environment publishes. Carries X-Test-Id. */
     fun http(service: String) = HttpProbe(endpoint(service), ids.header)
@@ -56,7 +58,7 @@ class TerraContext(
      * Configuring the simulator therefore costs an HTTP call, not an environment.
      */
     val simulator: SimulatorProbe by lazy {
-        SimulatorProbe(endpoint("store-simulator"), ids.header)
+        SimulatorProbe(endpoint(Terra.simulatorService), ids.header)
             .also { probe -> opened += AutoCloseable { probe.reset() } }
     }
 

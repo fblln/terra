@@ -295,12 +295,36 @@ never be parallelised.
 | `ctx.ids` | `id(prefix, n)`, plus the kinds you declare; `header`, `group()` |
 | `ctx.http("orders-api")` | `get`/`post`, carries `X-Test-Id` at the first hop |
 | `ctx.kafka` | `shouldBePublished`, `shouldNotBePublished`, `publish`; `checkpoint`/`awaitAfter`/`readAfter` for undeclared topics |
-| `ctx.mongo` | `orders`, `inventory`, `collection(name)` → `insert`/`get`/`set`/`await`/`mine`/`drop` |
-| `ctx.simulator` | `acceptOrders`, `rejectOrdersFrom`, `failOrders`, `placeOrder`, `ordersReceived` |
+| `ctx.mongo` | `collection(name)` → `insert`/`get`/`set`/`await`/`mine`/`drop` |
+| `ctx.simulator` | `stub`, `send`, `requestsReceived`, `reset` — you name the operations |
 | `ctx.endpoint("kafka")` | host and port, from the descriptor |
 | `ctx.chaos` | `withNetworkPartition(target) { … }` — exclusive tests only |
 | `ctx.requires("simulator")` | refuse early if the topology lacks a capability |
 | `eventually { … }` | polling assertion, scaled 20× under a debugger |
+
+### What terra does not know
+
+Terra discovers ports from Docker, endpoints from the descriptor and topics from the
+environment file. Four things it cannot discover, stated once per JVM — registered by
+ServiceLoader so nothing has to remember to call it:
+
+```kotlin
+// system-tests/src/test/kotlin/tests/TerraSetup.kt
+class TerraSetup : LauncherSessionListener {
+    override fun launcherSessionOpened(session: LauncherSession) {
+        Terra.database = "fulfilment"            // the database your services write to
+        Terra.simulatorService = "carrier-mock"  // which service is the programmable mock
+        Terra.allowedLogPatterns += Regex("""Connection refused.*retrying""")
+    }
+}
+```
+
+`Terra.mongoService` and `Terra.kafkaService` default to `mongodb` and `kafka`; set
+them if your topology names them otherwise.
+
+Everything else your project names, it names as extensions — identifiers, collections
+and mock operations all follow the same pattern, so there is one convention to learn
+rather than three.
 
 ### Your own identifiers
 

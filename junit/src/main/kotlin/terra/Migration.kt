@@ -35,6 +35,7 @@ interface EnvironmentMigration {
 
 class MigrationContext(
     val descriptor: EnvironmentDescriptor,
+    private val databaseName: String,
 ) : AutoCloseable {
 
     private val closeables = mutableListOf<AutoCloseable>()
@@ -48,7 +49,7 @@ class MigrationContext(
     val mongo: MongoDatabase by lazy {
         val client = MongoClients.create("mongodb://${descriptor.endpoint("mongodb")}")
         closeables += AutoCloseable { client.close() }
-        client.getDatabase("systest")
+        client.getDatabase(databaseName)
     }
 
     /** Create if absent. The common case, and the one that has to be idempotent. */
@@ -75,7 +76,7 @@ internal object Migrations {
         // Topics declared in the environment file are created before anything else,
         // so `topics:` is a declaration rather than a thing to also remember to migrate.
         if (descriptor.topics.isNotEmpty() || applicable.isNotEmpty()) {
-            MigrationContext(descriptor).use { ctx ->
+            MigrationContext(descriptor, Terra.database).use { ctx ->
                 descriptor.topics.forEach { ctx.topic(it) }
                 applicable.forEach { migration ->
                     runCatching { migration.apply(ctx) }.getOrElse { failure ->

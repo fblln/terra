@@ -15,14 +15,24 @@ import java.time.Duration
  * (run, test), so a shared database behaves like a private one and two tests can
  * seed the same collection at the same moment.
  */
-class MongoProbe(endpoint: HostPort, private val ids: TestIds) : AutoCloseable {
+class MongoProbe(
+    endpoint: HostPort,
+    private val ids: TestIds,
+    databaseName: String,
+) : AutoCloseable {
 
     private val client: MongoClient = MongoClients.create("mongodb://$endpoint")
-    private val database = client.getDatabase("systest")
+    private val database = client.getDatabase(databaseName)
 
-    val orders: Collection by lazy { collection("orders") }
-    val inventory: Collection by lazy { collection("inventory") }
-
+    /**
+     * Terra does not know your collections. Name them once in your own project and
+     * every test reads them the same way it reads its identifiers:
+     *
+     * ```kotlin
+     * val MongoProbe.orders get() = collection("orders")
+     * val MongoProbe.inventory get() = collection("inventory")
+     * ```
+     */
     fun collection(name: String) = Collection(database.getCollection(name), ids)
 
     override fun close() = client.close()

@@ -19,7 +19,7 @@ annotation class Environment(val value: String)
 @ExtendWith(TerraExtension::class)
 abstract class SystemTest
 
-const val ENVIRONMENT = "systest.environment"
+const val ENVIRONMENT = "terra.environment"
 
 /**
  * Reads the environment; runs concurrently with other shared tests.

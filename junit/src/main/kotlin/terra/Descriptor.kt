@@ -61,7 +61,7 @@ object Descriptors {
 
         generateSequence(Path("").toAbsolutePath().normalize()) { it.parent }
             .firstOrNull { (it / "environments").isDirectory() }
-            ?.let { it / "build" / "systest" / "environments" }
+            ?.let { it / "build" / "terra" / "environments" }
             ?: Path("build/terra/environments")
     }
 
