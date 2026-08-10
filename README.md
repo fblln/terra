@@ -45,7 +45,7 @@ This repository runs as-is on public images. `demo/` stands in for your
 
 ### 1. What goes where
 
-The harness is generic. Environments, compose files and tests are yours and belong
+terra is generic. Environments, compose files and tests are yours and belong
 together, in one module.
 
 ```text
@@ -65,7 +65,8 @@ your-monorepo/
       inventory/ReserveStockST.kt
       shipping/…
     src/test/resources/junit-platform.properties
-  harness/                    ← this tool (or a published dependency)
+  # terra itself is a separate repository — checked out beside this one,
+  # or a published dependency. It is not vendored into your tree.
 ```
 
 Component tests stay in the service repositories. Testcontainers is the right tool
@@ -76,7 +77,7 @@ one level down; it does not own the system topology.
 `settings.gradle.kts`:
 
 ```kotlin
-includeBuild("terra")        // composite build while it moves; a coordinate later
+includeBuild("../terra")     // a sibling checkout while it moves; a coordinate later
 ```
 
 `system-tests/build.gradle.kts`:
@@ -149,7 +150,7 @@ compose:
   - compose/base.yml
   - compose/stacks/fulfilment.yml
 
-services:                 # service -> container port; the harness discovers the host port
+services:                 # service -> container port; terra discovers the host port
   gateway: 8080
   orders-api: 8080
   mongodb: 27017
@@ -172,10 +173,10 @@ vars:
 
 Rules that save a day each:
 
-- **Never publish fixed host ports** in compose. Docker assigns, the harness
+- **Never publish fixed host ports** in compose. Docker assigns, terra
   discovers. Fixed ports stop two environments coexisting, which is what makes
   attach-and-run possible.
-- **Every service needs a healthcheck.** Readiness is `up -d --wait`; the harness does
+- **Every service needs a healthcheck.** Readiness is `up -d --wait`; terra does
   not poll. No healthcheck means "ready" means "the process started".
 - **The topology must stay startable by hand.** Whatever `terra` runs, this must
   work too:
@@ -216,10 +217,10 @@ class ReserveStockST : SystemTest() {
 ### 5. Run it
 
 ```bash
-./harness/terra up fulfilment --project-dir system-tests    # once, pay the startup
+terra up fulfilment --project-dir system-tests    # once, pay the startup
 # …then the IDE run gutter works indefinitely, instantly
-./harness/terra run --project-dir system-tests --tag inventory
-./harness/terra down fulfilment --project-dir system-tests
+terra run --project-dir system-tests --tag inventory
+terra down fulfilment --project-dir system-tests
 ```
 
 The test JVM never starts containers. With no environment running you get the command
@@ -230,7 +231,7 @@ Cannot run: no environment is running for environment 'fulfilment'.
 
     ./terra up fulfilment
 
-The test JVM never starts containers — that is the harness's job.
+The test JVM never starts containers — that is terra's job.
 ```
 
 ### 6. Run it in CI
@@ -239,7 +240,7 @@ The test JVM never starts containers — that is the harness's job.
 strategy:
   matrix: { shard: [1, 2, 3, 4] }
 steps:
-  - run: ./harness/terra run --project-dir system-tests
+  - run: terra run --project-dir system-tests
     env:
       TERRA_SHARD: ${{ matrix.shard }}/4
   - uses: actions/upload-artifact@v4
@@ -313,7 +314,7 @@ fun `a test`(ctx: HarnessContext) { ctx.run {          // don't
 ```
 
 It reads tidily and it is a bad trade. `mongo`, `ids` and `http` now come from nowhere
-visible, and a reader has to know the harness to know they are not locals, fields, or
+visible, and a reader has to know terra to know they are not locals, fields, or
 imports. That is the cost every day.
 
 The occasional cost is worse: an implicit receiver **can be shadowed**. Give the test
@@ -344,7 +345,7 @@ JUnit's `@ResourceLock` guarantees no shared test overlaps it — measured, not 
 
 ### Kafka assertions
 
-Declare the topics in the environment file and the harness marks all of them at the
+Declare the topics in the environment file and terra marks all of them at the
 start of every test, before it can act — so no test takes a checkpoint by hand:
 
 ```yaml
@@ -459,7 +460,7 @@ environment**: re-running a test against a retained environment must not reuse i
 ## Configuring a service
 
 A service with a hundred environment variables has its largest failure surface exactly
-there, so the harness makes configuration assertable.
+there, so terra makes configuration assertable.
 
 Values are declared once, in the environment file; the compose file only names them
 with a fallback so `docker compose config` resolves while the fingerprint is still
@@ -714,12 +715,12 @@ org.gradle.configuration-cache.entries-per-key=8
 
 ## Traps already paid for
 
-Every one of these cost real time here. They are fixed in the harness; they will bite
+Every one of these cost real time here. They are fixed in terra; they will bite
 again in your own compose files.
 
 | Trap | Symptom | Fix |
 |---|---|---|
-| Compose resolves relative bind mounts against the **first `-f` file's** directory | volume silently becomes an empty directory | `--project-directory` (the harness does this) |
+| Compose resolves relative bind mounts against the **first `-f` file's** directory | volume silently becomes an empty directory | `--project-directory` (terra does this) |
 | Overriding `command:` skips nginx's `/docker-entrypoint.d/` | `localhost` → `::1` → connection refused in healthchecks | healthcheck on `127.0.0.1`, never `localhost` |
 | Kafka advertises its own address | clients redirected to an unreachable port | `hostPorts:` — a port derived from the fingerprint |
 | Gradle caches the test task | second environment reports `BUILD SUCCESSFUL in 1s`, runs nothing | `outputs.upToDateWhen { false }` |
