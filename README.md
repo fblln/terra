@@ -765,3 +765,7 @@ Additive; none of it changes anything above:
 4. **Logs are collected from the moment the environment is up**, not after a failure.
 5. **The descriptor is the only thing the test JVM knows about infrastructure.**
 6. **Scope by identity; never clear shared state.**
+
+## Licence
+
+MIT — see [LICENSE](LICENSE).
