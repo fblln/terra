@@ -2,7 +2,7 @@ package tests.returns
 
 import terra.*
 import org.junit.jupiter.api.Tag
-import tests.Tags
+import tests.*
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import java.net.URI

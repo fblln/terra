@@ -2,7 +2,7 @@ package tests.fulfilment
 
 import terra.*
 import org.junit.jupiter.api.Tag
-import tests.Tags
+import tests.*
 import org.assertj.core.api.Assertions.assertThat
 import java.time.Duration
 import java.time.Instant

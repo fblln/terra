@@ -76,16 +76,37 @@ class TerraContext(
  * same topic simultaneously and never see each other.
  */
 class TestIds(private val runId: String, private val testId: String) {
+
+    /** Travels as `X-Test-Id`, and stamps every document this test writes. */
     val header = "$runId-$testId"
-    fun order(n: Int = 1) = "ORD-$runId-$testId-%03d".format(n)
+
+    /** Terra's own: a consumer group nothing else in the run will use. */
+    fun group() = "terra-$runId-$testId"
 
     /**
-     * A user nobody else is using. The point of this one is scoping a *downstream*
-     * mock: if the value a service sends onward is unique to this test, the rule can
-     * match on it and no header has to survive the hop.
+     * An identifier of your own kind that nothing else in the run can collide with.
+     *
+     * Terra does not know what your domain calls things, so it generates the unique
+     * part and you name the kind. Declare the vocabulary once, next to your tags:
+     *
+     * ```kotlin
+     * // system-tests/src/test/kotlin/tests/Ids.kt
+     * fun TestIds.order(n: Int = 1) = id("ORD", n)
+     * fun TestIds.sku(n: Int = 1) = id("SKU", n)
+     * fun TestIds.customer(n: Int = 1) = id("CUS", n)
+     * ```
+     *
+     * and then every test reads `ctx.ids.order()`, with the kind checked by the
+     * compiler rather than spelled out as a string at each call site.
+     *
+     * [n] distinguishes several of the same kind within one test, and is explicit
+     * rather than a counter so a rerun produces the same ids — which matters when you
+     * are reading them back out of a log.
      */
-    fun user(n: Int = 1) = "usr-$runId-$testId-%03d".format(n)
-    fun sku(n: Int = 1) = "SKU-$runId-$testId-%03d".format(n)
-    fun group() = "terra-$runId-$testId"
+    fun id(prefix: String, n: Int = 1): String {
+        require(prefix.isNotBlank()) { "an id kind needs a prefix" }
+        return "%s-%s-%s-%03d".format(prefix, runId, testId, n)
+    }
+
     override fun toString() = header
 }

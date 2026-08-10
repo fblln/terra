@@ -292,7 +292,7 @@ never be parallelised.
 
 | | |
 |---|---|
-| `ctx.ids` | `order()`, `sku()`, `user()`, `group()`, `header` — unique per execution × test |
+| `ctx.ids` | `id(prefix, n)`, plus the kinds you declare; `header`, `group()` |
 | `ctx.http("orders-api")` | `get`/`post`, carries `X-Test-Id` at the first hop |
 | `ctx.kafka` | `shouldBePublished`, `shouldNotBePublished`, `publish`; `checkpoint`/`awaitAfter`/`readAfter` for undeclared topics |
 | `ctx.mongo` | `orders`, `inventory`, `collection(name)` → `insert`/`get`/`set`/`await`/`mine`/`drop` |
@@ -301,6 +301,37 @@ never be parallelised.
 | `ctx.chaos` | `withNetworkPartition(target) { … }` — exclusive tests only |
 | `ctx.requires("simulator")` | refuse early if the topology lacks a capability |
 | `eventually { … }` | polling assertion, scaled 20× under a debugger |
+
+### Your own identifiers
+
+Terra generates the part that must be unique — the execution and the test — and knows
+nothing about what your domain calls things. You name the kinds once, next to your
+tags:
+
+```kotlin
+// system-tests/src/test/kotlin/tests/Ids.kt
+fun TestIds.order(n: Int = 1) = id("ORD", n)
+fun TestIds.sku(n: Int = 1) = id("SKU", n)
+fun TestIds.customer(n: Int = 1) = id("CUS", n)
+```
+
+```kotlin
+ctx.mongo.orders.insert(ctx.ids.order(), "sku" to ctx.ids.sku())
+ctx.simulator.rejectOrdersFrom(ctx.ids.customer())
+```
+
+Adding a kind is a line in your own project, not a change to the harness — and the
+kind is checked by the compiler rather than spelled as a string at each call site.
+`n` distinguishes several of the same kind inside one test and is explicit rather
+than a counter, so a rerun produces the same ids, which matters when you are reading
+them back out of a log.
+
+Keep prefixes short and recognisable: `ORD-8f30-a1b2-001` should tell whoever is
+grepping at 3am both what it is and which test made it.
+
+If you would rather not import the extensions in every file, declare them as member
+extensions on a project base class (`abstract class FulfilmentTest : SystemTest()`)
+and they are in scope for every subclass.
 
 ### Keep `ctx.` explicit
 

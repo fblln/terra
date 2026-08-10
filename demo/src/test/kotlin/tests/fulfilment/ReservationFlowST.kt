@@ -3,7 +3,7 @@ package tests.fulfilment
 import terra.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Tag
-import tests.Tags
+import tests.*
 import org.assertj.core.api.Assertions.assertThat
 
 /**
