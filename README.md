@@ -8,7 +8,7 @@ terra run fulfilment
    ├── resolve environments/fulfilment.yml → fingerprint → project terra-93ec8216
    ├── docker compose up -d --wait
    ├── start log + event followers          (live until `down`)
-   ├── write build/terra/environments/fulfilment.json  ─--─┐
+   ├── write build/terra/environments/fulfilment.json  ────┐
    ├── exec ./gradlew systemTest                           │  no Docker in this process
    ├── collect diagnostics                                 │
    └── docker compose down --volumes                       │
