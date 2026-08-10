@@ -4,7 +4,7 @@
 
 services:
   gateway:
-    image: nginx:1.27-alpine
+    image: nginx:1.31-alpine
     ports:
       - "80"
     depends_on:
@@ -28,7 +28,7 @@ services:
   # Changing any of these changes the environment fingerprint, so `up` starts a new
   # project rather than leaving you testing against the old configuration.
   orders-api:
-    image: nginx:1.27-alpine
+    image: nginx:1.31-alpine
     volumes:
       - ./compose/orders-api/default.conf.template:/etc/nginx/templates/default.conf.template:ro
     environment:

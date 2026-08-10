@@ -16,7 +16,7 @@ import org.junit.jupiter.api.parallel.ResourceLock
 @Retention(AnnotationRetention.RUNTIME)
 annotation class Environment(val value: String)
 
-@ExtendWith(HarnessExtension::class)
+@ExtendWith(TerraExtension::class)
 abstract class SystemTest
 
 const val ENVIRONMENT = "systest.environment"

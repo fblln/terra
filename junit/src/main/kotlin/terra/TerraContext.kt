@@ -9,7 +9,7 @@ import java.time.Instant
  * parallel execution three hundred tests from now, and by then it is expensive
  * to undo.
  */
-class HarnessContext(
+class TerraContext(
     private val attached: Attached,
     val ids: TestIds,
     val startedAt: Instant,

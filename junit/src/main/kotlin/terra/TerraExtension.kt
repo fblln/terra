@@ -16,7 +16,7 @@ import kotlin.random.Random
  * That is what makes the IDE run gutter work: there is no 40-second stall to hide,
  * and stopping a run in the IDE cannot destroy anybody's environment.
  */
-class HarnessExtension :
+class TerraExtension :
     BeforeAllCallback, BeforeEachCallback, AfterEachCallback, ParameterResolver {
 
     override fun beforeAll(ctx: ExtensionContext) {
@@ -27,7 +27,7 @@ class HarnessExtension :
         val attached = attached(ctx, environmentOf(ctx))
         val ids = TestIds(EXEC_ID, shortId(ctx.uniqueId))
         val exclusive = ctx.requiredTestMethod.annotations.any { it is ExclusiveEnvTest }
-        val harness = HarnessContext(attached, ids, Instant.now(), exclusive)
+        val harness = TerraContext(attached, ids, Instant.now(), exclusive)
         ctx.store().put(CONTEXT, harness)
         ctx.store().put(JOURNAL, Journal.begin("${ctx.requiredTestClass.simpleName} > ${ctx.displayName}"))
 
@@ -37,7 +37,7 @@ class HarnessExtension :
     }
 
     override fun afterEach(ctx: ExtensionContext) {
-        val harness = ctx.store().get(CONTEXT, HarnessContext::class.java) ?: return
+        val harness = ctx.store().get(CONTEXT, TerraContext::class.java) ?: return
         harness.close()
 
         val journal = ctx.store().get(JOURNAL, TestJournal::class.java)
@@ -60,11 +60,11 @@ class HarnessExtension :
     }
 
     override fun supportsParameter(p: ParameterContext, ctx: ExtensionContext) =
-        p.parameter.type == HarnessContext::class.java
+        p.parameter.type == TerraContext::class.java
 
     override fun resolveParameter(p: ParameterContext, ctx: ExtensionContext): Any =
-        ctx.store().get(CONTEXT, HarnessContext::class.java)
-            ?: error("no HarnessContext; is the test annotated with @SharedEnvTest or @ExclusiveEnvTest?")
+        ctx.store().get(CONTEXT, TerraContext::class.java)
+            ?: error("no TerraContext; is the test annotated with @SharedEnvTest or @ExclusiveEnvTest?")
 
     // ---------------------------------------------------------------- internals
 
@@ -74,10 +74,17 @@ class HarnessExtension :
             .firstOrNull()?.value
             ?: error("${ctx.requiredTestClass.simpleName} has no @Environment")
 
-    /** Resolved once per JVM per environment, and cached in the root store. */
+    /**
+     * Resolved once per JVM per environment, and cached in the root store.
+     *
+     * JUnit 6 declares `getOrComputeIfAbsent` as returning a nullable value, so the
+     * null branch is stated rather than assumed — it should be unreachable, and if the
+     * store ever surprises us it says so instead of throwing an NPE from nowhere.
+     */
     private fun attached(ctx: ExtensionContext, name: String): Attached =
         ctx.root.getStore(Namespace.GLOBAL)
             .getOrComputeIfAbsent(name, { attach(name) }, Attached::class.java)
+            ?: error("environment '$name' vanished from the extension store")
 
     private fun attach(name: String): Attached {
         val descriptor = Descriptors.read(name) ?: refuse(name, "no environment is running")
@@ -112,7 +119,7 @@ class HarnessExtension :
         }.getInputStream().close()
     }.isSuccess
 
-    private fun resultDir(ctx: ExtensionContext, harness: HarnessContext): Path =
+    private fun resultDir(ctx: ExtensionContext, harness: TerraContext): Path =
         harness.descriptor.results
             .resolve("tests")
             .resolve(ctx.requiredTestClass.name.replace('.', '/'))
@@ -120,11 +127,11 @@ class HarnessExtension :
             .createDirectories()
 
     private fun ExtensionContext.store() =
-        getStore(Namespace.create(HarnessExtension::class.java, uniqueId))
+        getStore(Namespace.create(TerraExtension::class.java, uniqueId))
 
     private companion object {
-        const val CONTEXT = "harness.context"
-        const val JOURNAL = "harness.journal"
+        const val CONTEXT = "terra.context"
+        const val JOURNAL = "terra.journal"
 
         /**
          * Per *execution*, not per environment.

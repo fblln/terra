@@ -20,12 +20,12 @@ data class StockMoved(val sku: String = "", val delta: Int = 0, val seq: Int = 0
 class KafkaPubSubST : SystemTest() {
 
     @BeforeEach
-    fun seed(ctx: HarnessContext) {
+    fun seed(ctx: TerraContext) {
         ctx.mongo.inventory.insert(ctx.ids.sku(), "onHand" to 10)
     }
 
     @SharedEnvTest
-    fun `a batch comes back in the order it was published`(ctx: HarnessContext) {
+    fun `a batch comes back in the order it was published`(ctx: TerraContext) {
         val mark = ctx.kafka.checkpoint(STOCK)
 
         (1..5).forEach { seq ->
@@ -41,7 +41,7 @@ class KafkaPubSubST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `publishing to one topic leaves the other alone`(ctx: HarnessContext) {
+    fun `publishing to one topic leaves the other alone`(ctx: TerraContext) {
         val stock = ctx.kafka.checkpoint(STOCK)
         val shipments = ctx.kafka.checkpoint(SHIPMENTS)
 
@@ -61,7 +61,7 @@ class KafkaPubSubST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `an event drives a document update, and both are asserted`(ctx: HarnessContext) {
+    fun `an event drives a document update, and both are asserted`(ctx: TerraContext) {
         val mark = ctx.kafka.checkpoint(STOCK)
 
         ctx.kafka.publish(STOCK, StockMoved(sku = ctx.ids.sku(), delta = -4, seq = 1))
@@ -76,7 +76,7 @@ class KafkaPubSubST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `a failed match reports the records it did see`(ctx: HarnessContext) {
+    fun `a failed match reports the records it did see`(ctx: TerraContext) {
         val mark = ctx.kafka.checkpoint(STOCK)
         ctx.kafka.publish(STOCK, StockMoved(sku = ctx.ids.sku(), delta = -1, seq = 99))
 

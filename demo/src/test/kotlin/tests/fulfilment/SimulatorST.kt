@@ -27,14 +27,14 @@ class SimulatorST : SystemTest() {
     private lateinit var sim: SimulatorProbe
 
     @BeforeEach
-    fun defaultBehaviour(ctx: HarnessContext) {
+    fun defaultBehaviour(ctx: TerraContext) {
         ctx.requires("simulator")
         sim = ctx.simulator
         sim.acceptOrders()          // last-resort rule; this test's users only
     }
 
     @SharedEnvTest
-    fun `a rule scoped by a test-unique user needs no propagation`(ctx: HarnessContext) {
+    fun `a rule scoped by a test-unique user needs no propagation`(ctx: TerraContext) {
         val blocked = ctx.ids.user()          // usr-8f30-a1b2-001; nobody else has it
 
         sim.rejectOrdersFrom(blocked, status = 409, reason = "USER_BLOCKED")
@@ -46,14 +46,14 @@ class SimulatorST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `a concurrent test with its own user is untouched by that rule`(ctx: HarnessContext) {
+    fun `a concurrent test with its own user is untouched by that rule`(ctx: TerraContext) {
         // Runs beside the test above, against the same simulator, with no header to
         // tell them apart. They do not collide because their users cannot collide.
         assertThat(sim.placeOrder(user = ctx.ids.user()).status).isEqualTo(201)
     }
 
     @SharedEnvTest
-    fun `requests can still be inspected, scoped by the same identity`(ctx: HarnessContext) {
+    fun `requests can still be inspected, scoped by the same identity`(ctx: TerraContext) {
         val user = ctx.ids.user()
 
         sim.placeOrder(user = user, sku = ctx.ids.sku())
@@ -67,7 +67,7 @@ class SimulatorST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `asking for unscoped inspection is refused rather than quietly wrong`(ctx: HarnessContext) {
+    fun `asking for unscoped inspection is refused rather than quietly wrong`(ctx: TerraContext) {
         val failure = runCatching { sim.ordersReceived() }.exceptionOrNull()
 
         assertThat(failure).isNotNull()

@@ -6,7 +6,7 @@
 
 services:
   mongodb:
-    image: mongo:7
+    image: mongo:8
     ports:
       - "27017"                      # published on an ephemeral host port
     healthcheck:
@@ -17,7 +17,7 @@ services:
       start_period: 5s
 
   kafka:
-    image: apache/kafka:3.8.0
+    image: apache/kafka:4.3.1
     # Kafka hands its own address to clients, so it cannot live behind an ephemeral
     # port. KAFKA_HOST_PORT is derived from the environment fingerprint: stable for
     # this environment, different for every other one. See environments/*.yml.

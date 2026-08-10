@@ -11,7 +11,7 @@
 
 services:
   store-simulator:
-    image: wiremock/wiremock:3.9.1
+    image: wiremock/wiremock:3.13.2
     # The journal is bounded rather than pruned per test: without header scoping a
     # test cannot express "my requests" as a query, so nobody deletes anybody's.
     command: ["--local-response-templating", "--disable-banner", "--max-request-journal-entries", "10000"]

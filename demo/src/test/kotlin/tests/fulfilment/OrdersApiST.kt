@@ -19,7 +19,7 @@ import org.assertj.core.api.Assertions.assertThat
 class OrdersApiST : SystemTest() {
 
     @SharedEnvTest
-    fun `the service is reachable on the port the harness discovered`(ctx: HarnessContext) {
+    fun `the service is reachable on the port the harness discovered`(ctx: TerraContext) {
         val response = ctx.http("orders-api").get("/")
 
         assertThat(response.status).isEqualTo(200)
@@ -27,7 +27,7 @@ class OrdersApiST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `the configuration the environment declared is the configuration it received`(ctx: HarnessContext) {
+    fun `the configuration the environment declared is the configuration it received`(ctx: TerraContext) {
         val config = ctx.http("orders-api").get("/config").json()
 
         // Identity and build
@@ -45,7 +45,7 @@ class OrdersApiST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `numeric and boolean settings arrive with the right types`(ctx: HarnessContext) {
+    fun `numeric and boolean settings arrive with the right types`(ctx: TerraContext) {
         val config = ctx.http("orders-api").get("/config").json()
 
         assertThat(config["carrierTimeoutMs"].asInt()).isEqualTo(2000)
@@ -62,7 +62,7 @@ class OrdersApiST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `an unknown route is a 404, not a 500`(ctx: HarnessContext) {
+    fun `an unknown route is a 404, not a 500`(ctx: TerraContext) {
         val response = ctx.http("orders-api").get("/no-such-thing")
 
         assertThat(response.status).isEqualTo(404)
@@ -70,7 +70,7 @@ class OrdersApiST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `the environment declares that this service is present`(ctx: HarnessContext) {
+    fun `the environment declares that this service is present`(ctx: TerraContext) {
         ctx.requires("orders")
         assertThat(ctx.descriptor.endpoints).containsKey("orders-api")
     }

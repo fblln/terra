@@ -9,8 +9,8 @@ kotlin { jvmToolchain(17) }
 
 dependencies {
     testImplementation(project(":junit"))
-    testImplementation("org.junit.jupiter:junit-jupiter-engine:5.11.4")
-    testImplementation("org.assertj:assertj-core:3.26.3")
+    testImplementation("org.junit.jupiter:junit-jupiter-engine")
+    testImplementation("org.assertj:assertj-core:3.27.7")
 }
 
 // Nothing here but system tests, so the default `test` task would only ever fail:

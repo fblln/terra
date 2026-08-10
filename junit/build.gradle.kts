@@ -9,12 +9,12 @@ plugins {
 kotlin { jvmToolchain(17) }
 
 dependencies {
-    api(platform("org.junit:junit-bom:5.11.4"))
+    api(platform("org.junit:junit-bom:6.1.3"))
     api("org.junit.jupiter:junit-jupiter-api")
     api("org.junit.platform:junit-platform-launcher")
-    api("org.awaitility:awaitility:4.2.2")
-    api("org.apache.kafka:kafka-clients:3.8.1")
-    api("org.mongodb:mongodb-driver-sync:5.2.1")
-    api("com.fasterxml.jackson.module:jackson-module-kotlin:2.18.2")
-    api("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.18.2")
+    api("org.awaitility:awaitility:4.3.0")
+    api("org.apache.kafka:kafka-clients:4.3.1")
+    api("org.mongodb:mongodb-driver-sync:5.9.1")
+    api("com.fasterxml.jackson.module:jackson-module-kotlin:2.22.1")
+    api("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.22.1")
 }

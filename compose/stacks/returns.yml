@@ -7,7 +7,7 @@
 
 services:
   gateway:
-    image: nginx:1.27-alpine
+    image: nginx:1.31-alpine
     ports:
       - "80"
     depends_on:
@@ -27,7 +27,7 @@ services:
   # `localhost` resolves to ::1 and is refused while 127.0.0.1 serves fine.
   # Healthchecks should not depend on an entrypoint side effect.
   returns-api:
-    image: nginx:1.27-alpine
+    image: nginx:1.31-alpine
     command: sh -c "echo returns-api > /usr/share/nginx/html/index.html && exec nginx -g 'daemon off;'"
     ports:
       - "80"

@@ -200,12 +200,12 @@ import tests.Tags
 class ReserveStockST : SystemTest() {
 
     @BeforeEach
-    fun seed(ctx: HarnessContext) {
+    fun seed(ctx: TerraContext) {
         ctx.mongo.inventory.insert(ctx.ids.sku(), "onHand" to 3)
     }
 
     @SharedEnvTest
-    fun `reserves the last unit exactly once`(ctx: HarnessContext) {
+    fun `reserves the last unit exactly once`(ctx: TerraContext) {
         ctx.http("orders-api").post("/orders", """{"sku":"${'$'}{ctx.ids.sku()}"}""")
 
         ctx.kafka.shouldBePublished<StockMoved>("stock-moves") { it.sku == ctx.ids.sku() }
@@ -277,14 +277,14 @@ someone has asked twice.
 class ReserveStockST : SystemTest() {        // suffix ST
 
     @BeforeEach
-    fun seed(ctx: HarnessContext) { … }      // fixtures, per test
+    fun seed(ctx: TerraContext) { … }      // fixtures, per test
 
     @SharedEnvTest                           // runs concurrently with other shared tests
-    fun `reserves the last unit exactly once`(ctx: HarnessContext) { … }
+    fun `reserves the last unit exactly once`(ctx: TerraContext) { … }
 }
 ```
 
-`ctx` arrives by parameter injection. There is no static `Harness.INSTANCE`, because
+`ctx` arrives by parameter injection. There is no static `Terra.INSTANCE`, because
 global mutable state is how a suite discovers three hundred tests later that it can
 never be parallelised.
 
@@ -307,7 +307,7 @@ never be parallelised.
 Kotlin will happily let you drop the receiver:
 
 ```kotlin
-fun `a test`(ctx: HarnessContext) { ctx.run {          // don't
+fun `a test`(ctx: TerraContext) { ctx.run {          // don't
     mongo.orders.insert(ids.order(), …)
     http("orders-api").post("/carrier", …)
 } }
@@ -393,7 +393,7 @@ what makes assertions during an outage possible:
 
 ```kotlin
 @ExclusiveEnvTest
-fun `a partition makes the dependency unreachable, and it recovers`(ctx: HarnessContext) {
+fun `a partition makes the dependency unreachable, and it recovers`(ctx: TerraContext) {
     ctx.chaos.withNetworkPartition("store-simulator") {
         // unreachable to the caller in here…
         assertThat(ctx.http("store-simulator").get("/__admin/mappings").status).isEqualTo(200)
@@ -525,13 +525,13 @@ nothing is reset.
 
 ```kotlin
 @BeforeEach
-fun defaultBehaviour(ctx: HarnessContext) {
+fun defaultBehaviour(ctx: TerraContext) {
     ctx.requires("simulator")
     ctx.simulator.acceptOrders()
 }
 
 @SharedEnvTest
-fun `a blocked user is rejected while everyone else is served`(ctx: HarnessContext) {
+fun `a blocked user is rejected while everyone else is served`(ctx: TerraContext) {
     val blocked = ctx.ids.user()               // usr-8f30-a1b2-001; nobody else has it
 
     ctx.simulator.rejectOrdersFrom(blocked, status = 409, reason = "USER_BLOCKED")
@@ -729,6 +729,7 @@ again in your own compose files.
 | Awaitility reports its own timeout | `ConditionTimeoutException: … null` | `eventually` rethrows the last real failure |
 | Excluding a class descriptor in a JUnit filter | its methods still run | filter `MethodSource` too |
 | Cleanup queries that are not scoped | one test wipes every concurrent test's state | scope cleanup, or do not clean |
+| Matching log lines on `\w+Exception` | services name exception classes at INFO and WARN; unrelated tests fail | match on the error *level*, or on a line that is a stack trace |
 | Expression-bodied test (`fun x() = ctx.run { … }`) | JUnit reports `No tests found` — a non-Unit return is silently not discovered | use a block body |
 
 ---

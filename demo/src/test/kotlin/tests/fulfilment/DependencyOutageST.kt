@@ -22,7 +22,7 @@ import java.time.Instant
 class DependencyOutageST : SystemTest() {
 
     @ExclusiveEnvTest
-    fun `the dependency is reachable to begin with`(ctx: HarnessContext) {
+    fun `the dependency is reachable to begin with`(ctx: TerraContext) {
         ctx.requires("chaos")
         ctx.simulator.acceptOrders()
 
@@ -33,7 +33,7 @@ class DependencyOutageST : SystemTest() {
     }
 
     @ExclusiveEnvTest
-    fun `an unreachable dependency degrades to a stated contract, not a leak`(ctx: HarnessContext) {
+    fun `an unreachable dependency degrades to a stated contract, not a leak`(ctx: TerraContext) {
         ctx.requires("chaos")
         ctx.simulator.acceptOrders()
 
@@ -48,7 +48,7 @@ class DependencyOutageST : SystemTest() {
     }
 
     @ExclusiveEnvTest
-    fun `the service stays healthy while its dependency is down`(ctx: HarnessContext) {
+    fun `the service stays healthy while its dependency is down`(ctx: TerraContext) {
         ctx.requires("chaos")
 
         ctx.chaos.withNetworkPartition("store-simulator") {
@@ -64,7 +64,7 @@ class DependencyOutageST : SystemTest() {
     }
 
     @ExclusiveEnvTest
-    fun `the failure is bounded by the configured timeout, it does not hang`(ctx: HarnessContext) {
+    fun `the failure is bounded by the configured timeout, it does not hang`(ctx: TerraContext) {
         ctx.requires("chaos")
         val budget = ctx.http("orders-api").get("/config").json()["carrierTimeoutMs"].asInt()
 
@@ -82,7 +82,7 @@ class DependencyOutageST : SystemTest() {
     }
 
     @ExclusiveEnvTest
-    fun `it recovers by itself once the dependency comes back`(ctx: HarnessContext) {
+    fun `it recovers by itself once the dependency comes back`(ctx: TerraContext) {
         ctx.requires("chaos")
         ctx.simulator.acceptOrders()
 
@@ -98,7 +98,7 @@ class DependencyOutageST : SystemTest() {
     }
 
     @ExclusiveEnvTest
-    fun `an outage leaves no trace in the read model`(ctx: HarnessContext) {
+    fun `an outage leaves no trace in the read model`(ctx: TerraContext) {
         ctx.requires("chaos")
         ctx.simulator.acceptOrders()
         ctx.mongo.orders.insert(ctx.ids.order(), "state" to "NEW")
@@ -114,5 +114,5 @@ class DependencyOutageST : SystemTest() {
         ctx.kafka.shouldNotBePublished<ShipmentReady>("shipments") { it.order == ctx.ids.order() }
     }
 
-    private fun order(ctx: HarnessContext) = """{"user":"${ctx.ids.user()}","sku":"${ctx.ids.sku()}"}"""
+    private fun order(ctx: TerraContext) = """{"user":"${ctx.ids.user()}","sku":"${ctx.ids.sku()}"}"""
 }

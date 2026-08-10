@@ -70,7 +70,25 @@ class LogReader(private val file: Path) {
     private data class Entry(val service: String, val at: Instant, val message: String)
 
     private companion object {
-        val ERROR = Regex("""\bERROR\b|\bFATAL\b|\b\w+Exception\b""")
+        /**
+         * Deliberately level-based, not name-based.
+         *
+         * An earlier version also matched any line mentioning `\w+Exception`, which
+         * looks thorough and is a false-positive machine: services log exception class
+         * names at INFO and WARN constantly. MongoDB 8 informing us it retried a
+         * `WriteConflictException` — severity "I", handled internally, entirely normal
+         * when two tests create a collection at the same moment — failed two unrelated
+         * tests before this was fixed.
+         *
+         * So: an explicit error level, a JSON error severity, or a line that *is* a
+         * stack trace. Anything merely talking about an exception is prose.
+         */
+        val ERROR = Regex(
+            """\bERROR\b|\bFATAL\b|\bSEVERE\b""" +          // text loggers
+                """|"s":"[EF]"""" +                              // JSON loggers (mongo)
+                """|^\s*(?:[\w${'$'}.]+\.)?\w*(?:Exception|Error)(?::|\s|${'$'})""" +  // stack trace head
+                """|^\s*Caused by:"""
+        )
 
         val ALLOWED = listOf(
             Regex("""Connection refused.*retrying"""),

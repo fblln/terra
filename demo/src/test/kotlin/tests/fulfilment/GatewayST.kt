@@ -17,7 +17,7 @@ import java.net.URI
 class GatewayST : SystemTest() {
 
     @SharedEnvTest
-    fun `gateway answers on the port the harness discovered`(ctx: HarnessContext) {
+    fun `gateway answers on the port the harness discovered`(ctx: TerraContext) {
         val gateway = ctx.endpoint("gateway")
 
         // Nothing in this test knows a port number. Docker chose it, systest looked
@@ -30,7 +30,7 @@ class GatewayST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `every test gets identities nothing else can collide with`(ctx: HarnessContext) {
+    fun `every test gets identities nothing else can collide with`(ctx: TerraContext) {
         assertThat(ctx.ids.order()).startsWith("ORD-")
         assertThat(ctx.ids.group()).startsWith("terra-")
         // Derived from (run, test), so two tests can share a database and a topic
@@ -39,7 +39,7 @@ class GatewayST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `the environment advertises what it can do`(ctx: HarnessContext) {
+    fun `the environment advertises what it can do`(ctx: TerraContext) {
         ctx.requires("kafka")
         assertThat(ctx.descriptor.capabilities).contains("kafka", "mongo")
 

@@ -17,7 +17,7 @@ import java.net.URI
 class ReturnsST : SystemTest() {
 
     @SharedEnvTest
-    fun `returns-api exists only in this topology`(ctx: HarnessContext) {
+    fun `returns-api exists only in this topology`(ctx: TerraContext) {
         ctx.requires("returns")
 
         val body = eventuallyBody(ctx.endpoint("returns-api"))
@@ -25,7 +25,7 @@ class ReturnsST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `the shared half of the topology is here too`(ctx: HarnessContext) {
+    fun `the shared half of the topology is here too`(ctx: TerraContext) {
         // base.yml is written once and used by both environments, so Kafka and Mongo
         // are present with identical configuration — as separate containers, because
         // this is a separate project.
@@ -36,7 +36,7 @@ class ReturnsST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `asking for a capability this topology lacks is refused, not ignored`(ctx: HarnessContext) {
+    fun `asking for a capability this topology lacks is refused, not ignored`(ctx: TerraContext) {
         assertThatThrownBy { ctx.requires("simulator") }
             .isInstanceOf(IllegalStateException::class.java)
             .hasMessageContaining("lacks capability 'simulator'")

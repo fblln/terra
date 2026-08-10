@@ -19,7 +19,7 @@ data class ShipmentReady(val order: String = "", val state: String = "")
 class KafkaCheckpointST : SystemTest() {
 
     @SharedEnvTest
-    fun `reads only its own events, forward from the checkpoint`(ctx: HarnessContext) {
+    fun `reads only its own events, forward from the checkpoint`(ctx: TerraContext) {
         val mark = ctx.kafka.checkpoint(TOPIC)
 
         ctx.kafka.publish(TOPIC, ShipmentReady(order = "ORD-someone-else", state = "READY"))
@@ -30,7 +30,7 @@ class KafkaCheckpointST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `a checkpoint hides everything that happened before it`(ctx: HarnessContext) {
+    fun `a checkpoint hides everything that happened before it`(ctx: TerraContext) {
         ctx.kafka.publish(TOPIC, ShipmentReady(order = ctx.ids.order(2), state = "BEFORE"))
 
         val mark = ctx.kafka.checkpoint(TOPIC)      // taken after the event above

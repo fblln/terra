@@ -27,7 +27,7 @@ class ChaosST : SystemTest() {
 
     @ExclusiveEnvTest
     fun `a partition makes the dependency unreachable, and it recovers afterwards`(
-        ctx: HarnessContext,
+        ctx: TerraContext,
     ) {
         ctx.requires("chaos")
         ctx.simulator.acceptOrders()
@@ -49,7 +49,7 @@ class ChaosST : SystemTest() {
     }
 
     @ExclusiveEnvTest
-    fun `the partition heals even when the block throws`(ctx: HarnessContext) {
+    fun `the partition heals even when the block throws`(ctx: TerraContext) {
         ctx.requires("chaos")
 
         val thrown = runCatching {
@@ -61,7 +61,7 @@ class ChaosST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `a shared test is refused rather than allowed to cut everyone else off`(ctx: HarnessContext) {
+    fun `a shared test is refused rather than allowed to cut everyone else off`(ctx: TerraContext) {
         val refused = runCatching { ctx.chaos.withNetworkPartition("store-simulator") { } }
 
         assertThat(refused.isFailure).isTrue()

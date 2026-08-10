@@ -16,13 +16,13 @@ import org.assertj.core.api.Assertions.assertThat
 class ReservationFlowST : SystemTest() {
 
     @BeforeEach
-    fun seed(ctx: HarnessContext) {
+    fun seed(ctx: TerraContext) {
         ctx.mongo.inventory.insert(ctx.ids.sku(), "onHand" to 3, "reserved" to 0)
         ctx.mongo.orders.insert(ctx.ids.order(), "sku" to ctx.ids.sku(), "state" to "NEW", "quantity" to 2)
     }
 
     @SharedEnvTest
-    fun `a reservation moves stock, emits an event and lands in the read model`(ctx: HarnessContext) {
+    fun `a reservation moves stock, emits an event and lands in the read model`(ctx: TerraContext) {
         val mark = ctx.kafka.checkpoint("stock-moves")
 
         // The service is reachable and configured before we lean on it. In a real
@@ -46,7 +46,7 @@ class ReservationFlowST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `an over-reservation is rejected and emits nothing`(ctx: HarnessContext) {
+    fun `an over-reservation is rejected and emits nothing`(ctx: TerraContext) {
         val mark = ctx.kafka.checkpoint("stock-moves")
 
         ctx.mongo.orders.set(ctx.ids.order(), "state" to "REJECTED", "reason" to "INSUFFICIENT_STOCK")

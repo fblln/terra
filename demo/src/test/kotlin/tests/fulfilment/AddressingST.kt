@@ -26,7 +26,7 @@ import org.assertj.core.api.Assertions.assertThat
 class AddressingST : SystemTest() {
 
     @SharedEnvTest
-    fun `the service is configured with the internal name, not a discovered port`(ctx: HarnessContext) {
+    fun `the service is configured with the internal name, not a discovered port`(ctx: TerraContext) {
         val config = ctx.http("orders-api").get("/config").json()
 
         assertThat(config["mongoUri"].asText()).isEqualTo("mongodb://mongodb:27017")
@@ -39,7 +39,7 @@ class AddressingST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `the test reaches the same database on a different, discovered address`(ctx: HarnessContext) {
+    fun `the test reaches the same database on a different, discovered address`(ctx: TerraContext) {
         val fromOutside = ctx.endpoint("mongodb")
 
         assertThat(fromOutside.host).isEqualTo("localhost")
@@ -51,7 +51,7 @@ class AddressingST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `a service that must publish its own address gets a derived, stable port`(ctx: HarnessContext) {
+    fun `a service that must publish its own address gets a derived, stable port`(ctx: TerraContext) {
         // Kafka cannot live behind an ephemeral port: advertised.listeners hands its
         // address to clients. Such services go under `hostPorts:` and get a port
         // derived from the fingerprint — stable for this environment, distinct across

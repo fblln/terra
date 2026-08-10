@@ -21,7 +21,7 @@ import org.assertj.core.api.Assertions.assertThat
 class PublishedST : SystemTest() {
 
     @SharedEnvTest
-    fun `an event published during the test is found`(ctx: HarnessContext) {
+    fun `an event published during the test is found`(ctx: TerraContext) {
         ctx.kafka.publish("stock-moves", StockMoved(sku = ctx.ids.sku(), delta = -1, seq = 1))
 
         val moved = ctx.kafka.shouldBePublished<StockMoved>("stock-moves") { it.sku == ctx.ids.sku() }
@@ -30,7 +30,7 @@ class PublishedST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `an absence is asserted with a short timeout, not a long one`(ctx: HarnessContext) {
+    fun `an absence is asserted with a short timeout, not a long one`(ctx: TerraContext) {
         ctx.kafka.publish("stock-moves", StockMoved(sku = ctx.ids.sku(), delta = -1, seq = 1))
 
         // Nothing of ours reached shipments, proven in two seconds rather than thirty.
@@ -38,7 +38,7 @@ class PublishedST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `a topic that was never declared says so, instead of failing obscurely`(ctx: HarnessContext) {
+    fun `a topic that was never declared says so, instead of failing obscurely`(ctx: TerraContext) {
         val failure = runCatching {
             ctx.kafka.shouldBePublished<StockMoved>("not-declared") { true }
         }.exceptionOrNull()
@@ -48,7 +48,7 @@ class PublishedST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `migrations ran before the first test`(ctx: HarnessContext) {
+    fun `migrations ran before the first test`(ctx: TerraContext) {
         // Seeded by SeedReferenceData, once per JVM, idempotently.
         val carriers = ctx.mongo.collection("carriers")
 

@@ -21,7 +21,7 @@ import org.assertj.core.api.Assertions.assertThat
 class CollectionSweepST : SystemTest() {
 
     @ExclusiveEnvTest
-    fun `a sweep sees exactly what it put there`(ctx: HarnessContext) {
+    fun `a sweep sees exactly what it put there`(ctx: TerraContext) {
         val scratch = ctx.mongo.collection("sweep")
         scratch.drop()                                   // safe only because we run alone
 
@@ -33,7 +33,7 @@ class CollectionSweepST : SystemTest() {
     }
 
     @ExclusiveEnvTest
-    fun `every document written by the harness carries the id of its author`(ctx: HarnessContext) {
+    fun `every document written by the harness carries the id of its author`(ctx: TerraContext) {
         val scratch = ctx.mongo.collection("sweep")
         scratch.drop()
         scratch.insert(ctx.ids.order(), "state" to "PENDING")

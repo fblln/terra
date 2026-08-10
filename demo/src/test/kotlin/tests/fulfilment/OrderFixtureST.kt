@@ -19,7 +19,7 @@ import kotlin.concurrent.thread
 class OrderFixtureST : SystemTest() {
 
     @BeforeEach
-    fun seed(ctx: HarnessContext) {
+    fun seed(ctx: TerraContext) {
         ctx.mongo.orders.insert(
             ctx.ids.order(),
             "sku" to ctx.ids.sku(),
@@ -29,7 +29,7 @@ class OrderFixtureST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `the fixture is there when the test starts`(ctx: HarnessContext) {
+    fun `the fixture is there when the test starts`(ctx: TerraContext) {
         val order = ctx.mongo.orders.require(ctx.ids.order())
 
         assertThat(order.getString("state")).isEqualTo("PENDING")
@@ -38,7 +38,7 @@ class OrderFixtureST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `a test sees its own documents in a collection full of other tests`(ctx: HarnessContext) {
+    fun `a test sees its own documents in a collection full of other tests`(ctx: TerraContext) {
         ctx.mongo.orders.insert(ctx.ids.order(2), "state" to "PENDING")
         ctx.mongo.orders.insert(ctx.ids.order(3), "state" to "PENDING")
 
@@ -51,7 +51,7 @@ class OrderFixtureST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `await polls until the document reaches the state`(ctx: HarnessContext) {
+    fun `await polls until the document reaches the state`(ctx: TerraContext) {
         // Stands in for the service doing the work. In a real suite this is an HTTP
         // call and the wait is for a consumer somewhere to catch up.
         thread {
@@ -64,7 +64,7 @@ class OrderFixtureST : SystemTest() {
     }
 
     @SharedEnvTest
-    fun `a timeout says what the document actually looks like`(ctx: HarnessContext) {
+    fun `a timeout says what the document actually looks like`(ctx: TerraContext) {
         val failure = runCatching {
             ctx.mongo.orders.await(
                 ctx.ids.order(),
