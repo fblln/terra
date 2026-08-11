@@ -1,5 +1,10 @@
 package tests.fulfilment
 
+import io.skodjob.annotations.Desc
+import io.skodjob.annotations.Label
+import io.skodjob.annotations.Step
+import io.skodjob.annotations.SuiteDoc
+import io.skodjob.annotations.TestDoc
 import terra.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Tag
@@ -10,9 +15,29 @@ import org.assertj.core.api.Assertions.assertThat
  * A flow across all three surfaces at once — HTTP, MongoDB, Kafka — which is what a
  * real system test usually is. Every step uses ids derived from (execution, test),
  * so this runs concurrently with everything else without a reset anywhere.
+ *
+ * Also the worked example for `./gradlew :demo:testDocs` — the @SuiteDoc/@TestDoc
+ * annotations below are what ends up in demo/docs/.
  */
 @Tag(Tags.REGRESSION) @Tag(Tags.INVENTORY) @Tag(Tags.SHIPPING)
 @Environment("fulfilment")
+@SuiteDoc(
+    description = Desc(
+        "Reservation of stock end to end: the HTTP surface, the Mongo read model and " +
+            "the stock-moves topic, asserted together against a live `fulfilment` environment."
+    ),
+    beforeTestSteps = [
+        Step(
+            value = "Insert a SKU with onHand=3, reserved=0 under this test's own id",
+            expected = "Inventory holds stock nothing else in the run can see",
+        ),
+        Step(
+            value = "Insert a NEW order for 2 of that SKU under this test's own id",
+            expected = "An order exists to reserve against",
+        ),
+    ],
+    labels = [Label(Tags.INVENTORY), Label(Tags.SHIPPING)],
+)
 class ReservationFlowST : SystemTest() {
 
     @BeforeEach
@@ -21,6 +46,16 @@ class ReservationFlowST : SystemTest() {
         ctx.mongo.orders.insert(ctx.ids.order(), "sku" to ctx.ids.sku(), "state" to "NEW", "quantity" to 2)
     }
 
+    @TestDoc(
+        description = Desc("A reservation debits stock, emits StockMoved and leaves the order RESERVED."),
+        steps = [
+            Step(value = "Checkpoint the stock-moves topic", expected = "A mark to read forward from, so other tests' events are not seen"),
+            Step(value = "GET /health on orders-api", expected = "200 — the service is up and configured"),
+            Step(value = "Reserve 2 of the SKU", expected = "StockMoved{delta=-2} is published, inventory reads onHand=1 reserved=2"),
+            Step(value = "Await the order in the read model", expected = "Order state is RESERVED and still carries the SKU"),
+        ],
+        labels = [Label(Tags.REGRESSION), Label(Tags.INVENTORY)],
+    )
     @SharedEnvTest
     fun `a reservation moves stock, emits an event and lands in the read model`(ctx: TerraContext) {
         val mark = ctx.kafka.checkpoint("stock-moves")
@@ -45,6 +80,16 @@ class ReservationFlowST : SystemTest() {
         assertThat(order.getString("sku")).isEqualTo(ctx.ids.sku())
     }
 
+    @TestDoc(
+        description = Desc("An order for more than is on hand is rejected, and no StockMoved is emitted."),
+        steps = [
+            Step(value = "Checkpoint the stock-moves topic", expected = "A mark to assert an absence from"),
+            Step(value = "Await the order reaching REJECTED", expected = "reason is INSUFFICIENT_STOCK"),
+            Step(value = "Read stock-moves forward from the mark for 2s", expected = "Times out — nothing was emitted for this SKU"),
+            Step(value = "Re-read the SKU", expected = "onHand is still 3; the rejection moved nothing"),
+        ],
+        labels = [Label(Tags.REGRESSION), Label(Tags.INVENTORY)],
+    )
     @SharedEnvTest
     fun `an over-reservation is rejected and emits nothing`(ctx: TerraContext) {
         val mark = ctx.kafka.checkpoint("stock-moves")
