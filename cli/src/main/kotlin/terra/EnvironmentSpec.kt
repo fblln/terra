@@ -34,10 +34,6 @@ data class EnvironmentSpec(
      * is stable for a given environment and different for every other environment.
      *
      * Not part of the fingerprint (it is derived *from* it), so there is no cycle.
-     *
-     * ponytail: a flat 20000-range hash can collide across environments. Two colliding
-     * environments fail loudly at `up` with "port already allocated"; move to a real
-     * allocator only if that actually happens.
      */
     val derivedVars: Map<String, String> by lazy {
         hostPorts.keys.sorted().mapIndexed { i, service ->
@@ -70,9 +66,6 @@ data class EnvironmentSpec(
      * silently degrades into "attach to whatever is lying around".
      */
     private fun imageIds(): String = Compose.images(this).sorted().joinToString("\n") { image ->
-        // ponytail: an image we have not pulled yet hashes as its own name. `up` pulls
-        // it, and the next `up` computes the real id — so a first run is one project
-        // ahead of steady state, which is harmless.
         runCatching {
             ProcessBuilder("docker", "image", "inspect", "--format", "{{.Id}}", image)
                 .redirectErrorStream(true).start()

@@ -12,9 +12,6 @@
  *
  * Lives in a file rather than inside a function node's escaped JSON string so it is
  * reviewable in a diff. flows.json wires it up and holds no logic.
- *
- * ponytail: implements the subset terra calls, not WireMock. Unsupported matchers
- * fail loudly at registration rather than silently never firing.
  */
 
 const rules = [];      // registered mappings, newest last

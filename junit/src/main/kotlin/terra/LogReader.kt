@@ -32,9 +32,6 @@ class LogReader(private val file: Path) {
     /**
      * The window for a failed test, split by service. Two seconds of margin either
      * side, because the interesting cause usually precedes the visible symptom.
-     *
-     * ponytail: linear rescan of the whole file per failure. Fine for a handful of
-     * failures per run; index by byte offset if a run starts failing in bulk.
      */
     fun window(from: Instant, to: Instant, into: Path) {
         Thread.sleep(500)                       // let the follower flush the tail
