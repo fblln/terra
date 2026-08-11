@@ -24,3 +24,26 @@ services:
       timeout: 3s
       retries: 20
       start_period: 3s
+
+  # How the simulator emits events: a stub can carry a webhook, and the webhook needs
+  # something that speaks HTTP on one side and Kafka on the other. The REST proxy is
+  # that, off the shelf.
+  #
+  # Deliberately unpublished. Only the simulator container calls it, from inside the
+  # network, so it is not in `services:` in any environment file and no test can reach
+  # it — the event arrives on Kafka, which is where the test is already looking.
+  kafka-rest:
+    image: confluentinc/cp-kafka-rest:7.7.1
+    environment:
+      KAFKA_REST_HOST_NAME: kafka-rest
+      KAFKA_REST_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_REST_LISTENERS: http://0.0.0.0:8082
+    depends_on:
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/8082' || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 10s

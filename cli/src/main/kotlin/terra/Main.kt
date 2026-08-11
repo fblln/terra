@@ -277,8 +277,6 @@ private fun retain(descriptor: EnvironmentDescriptor) = println(
     """.trimIndent()
 )
 
-// ponytail: an environment with no matching tests still pays for `up`. That is a
-// smell in environments/, not a case worth a discovery pre-pass to detect.
 private fun discoverEnvironments(root: Path): List<String> =
     root.resolve("environments").listDirectoryEntries("*.yml").map { it.nameWithoutExtension }.sorted()
 

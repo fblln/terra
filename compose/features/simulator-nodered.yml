@@ -1,0 +1,53 @@
+# The same simulator, backed by Node-RED instead of WireMock.
+#
+# An alternative to compose/features/simulator.yml, not an addition: the service keeps
+# the name `store-simulator`, so swapping is two lines in an environment file — this
+# file instead of that one, and 1880 instead of 8080 under `services:`. Nothing in
+# `SimulatorProbe`, in the project's `Simulator.kt`, or in any test changes, because
+# /data/simulator.js answers the same admin endpoints WireMock does.
+#
+# What this buys over WireMock: the mock's own behaviour becomes a flow you can see
+# and extend — respond, wait, publish, and then whatever else the dependency really
+# does. What it costs: that behaviour is now yours to maintain. Read the trade in the
+# README before choosing it.
+#
+# The editor is at http://<discovered port>/editor while the environment is up.
+
+services:
+  store-simulator:
+    image: nodered/node-red:4.1.0
+    environment:
+      TZ: UTC
+    volumes:
+      # Read-only, and mounted per file: /data stays the container's own, so nothing
+      # Node-RED writes at runtime lands in the repository.
+      - ./compose/nodered/settings.js:/data/settings.js:ro
+      - ./compose/nodered/flows.json:/data/flows.json:ro
+      - ./compose/nodered/simulator.js:/data/simulator.js:ro
+    ports:
+      - "1880"
+    healthcheck:
+      # The image has no curl, but it is Node by definition.
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:1880/editor',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  # Same as the WireMock feature file: the simulator publishes over HTTP, and this is
+  # what turns that into a Kafka record.
+  kafka-rest:
+    image: confluentinc/cp-kafka-rest:7.7.1
+    environment:
+      KAFKA_REST_HOST_NAME: kafka-rest
+      KAFKA_REST_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_REST_LISTENERS: http://0.0.0.0:8082
+    depends_on:
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/8082' || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 10s

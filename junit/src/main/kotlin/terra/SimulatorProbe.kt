@@ -53,9 +53,28 @@ class SimulatorProbe(
 
     private val client: HttpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(5))
+        // Java's default is HTTP/2, which over plain HTTP means every request opens
+        // with an h2c upgrade. Jetty and nginx shrug and answer 1.1; Node destroys
+        // the socket, and the test sees "header parser received no bytes" from a
+        // service that is running perfectly. No test traffic here needs HTTP/2.
+        .version(HttpClient.Version.HTTP_1_1)
         .build()
 
     private val mapper = jacksonObjectMapper()
+
+    /**
+     * An event the simulator publishes on its own, [after] the call it answered.
+     *
+     * This is the half a canned response cannot express: a dependency that accepts a
+     * request now and reports the outcome later. [value] is templated the same way
+     * [stub]'s body is, so derive it from the request — `originalRequest` here,
+     * `request` in the response — and both carry the same id.
+     */
+    data class Publish(
+        val topic: String,
+        val value: String,
+        val after: Duration = Duration.ofSeconds(4),
+    )
 
     /**
      * Answer [status] with [body] for requests to [path].
@@ -63,6 +82,10 @@ class SimulatorProbe(
      * [matchingBody] is a JSONPath expression; give it one built from an id only this
      * test generated, or the rule belongs to everybody. Lower [priority] wins, so a
      * specific rule at 1 overrides a catch-all at 5 and nothing else changes.
+     *
+     * [thenPublish] makes the dependency asynchronous: the caller gets its response
+     * immediately and the event lands later, which is the behaviour a test cannot
+     * fake by publishing the event itself — it does not know when the call happened.
      */
     fun stub(
         path: String,
@@ -72,6 +95,7 @@ class SimulatorProbe(
         priority: Int = 5,
         matchingBody: String? = null,
         contentType: String = "application/json",
+        thenPublish: Publish? = null,
     ): SimulatorProbe {
         val request = mapper.createObjectNode().apply {
             put("method", method)
@@ -82,10 +106,34 @@ class SimulatorProbe(
         val mapping = mapper.createObjectNode().apply {
             put("priority", priority)
             set<ObjectNode>("request", request)
-            putObject("response")
-                .put("status", status)
-                .put("body", body)
-                .putObject("headers").put("Content-Type", contentType)
+            putObject("response").apply {
+                put("status", status)
+                put("body", body)
+                // The simulator runs with --local-response-templating, which is opt-in
+                // per stub. Without this a body containing a template is returned with
+                // the braces still in it — no error, just a wrong answer.
+                putArray("transformers").add("response-template")
+                putObject("headers").put("Content-Type", contentType)
+            }
+            thenPublish?.let {
+                putArray("postServeActions").addObject().apply {
+                    put("name", "webhook")
+                    putObject("parameters").apply {
+                        put("method", "POST")
+                        // The webhook fires from inside the container network, so this
+                        // is a service name and a container port, never an endpoint from
+                        // the descriptor — those are addresses for the test, not for a
+                        // service talking to another service.
+                        put("url", "${Terra.kafkaRestUrl}/topics/${it.topic}")
+                        putObject("headers")
+                            .put("Content-Type", "application/vnd.kafka.json.v2+json")
+                        put("body", """{"records":[{"value":${it.value}}]}""")
+                        putObject("delay")
+                            .put("type", "fixed")
+                            .put("milliseconds", it.after.toMillis())
+                    }
+                }
+            }
             // Tagged so every rule this test made can be removed in one call.
             putObject("metadata").put("testId", testId)
         }

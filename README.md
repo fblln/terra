@@ -23,7 +23,7 @@ from `terra` and running from the IDE are the same code path.
 [Writing a test](#writing-a-test) · [Isolation](#isolation-the-one-rule) ·
 [Services & config](#configuring-a-service) · [Mocks](#mocks-and-the-simulator) ·
 [Groups](#groups) · [Documenting tests](#documenting-tests) · [Commands](#commands) · [Reference](#reference) ·
-[Caching](#caching) · [Traps](#traps-already-paid-for) · [Not built](#not-built-yet)
+[Caching](#caching) · [Not built](#not-built-yet)
 
 ---
 
@@ -596,6 +596,42 @@ fun `a blocked user is rejected while everyone else is served`(ctx: TerraContext
 }
 ```
 
+### A dependency that answers now and reports later
+
+A canned response cannot express the dependency that accepts a request and says what
+happened afterwards. `thenPublish` can: the caller is answered immediately, and the
+event lands on Kafka after the delay the rule asked for.
+
+```kotlin
+fun SimulatorProbe.shipOrder(order: String, after: Duration = Duration.ofSeconds(4)) = stub(
+    path = "/orders", priority = 1, status = 201,
+    body = """{"status":"ACCEPTED","shipment":"SHP-{{jsonPath request.body '$.order'}}"}""",
+    matchingBody = "$[?(@.order == '$order')]",
+    thenPublish = SimulatorProbe.Publish(
+        topic = "shipments",
+        value = """{"order":"{{jsonPath originalRequest.body '$.order'}}","state":"SHIPPED"}""",
+        after = after,
+    ),
+)
+```
+
+A test cannot fake this by publishing the event itself, because it does not know when
+the service under test made the call. `DelayedShipmentST` asserts the absence first
+and the arrival second — without the absence the test passes whether the delay is four
+seconds or zero.
+
+Two details that are not optional. **Derive the id from the request** rather than
+generating one: the response and the webhook are rendered independently, so
+`{{randomValue}}` in both produces two different values, while anything computed from
+the request body matches on both sides. And the webhook fires **from inside the
+container network**, so its address is a service name and a container port
+(`Terra.kafkaRestUrl`, default `http://kafka-rest:8082`), never an endpoint from the
+descriptor — those are addresses for the test, not for a service calling a service.
+
+The event reaches Kafka through a REST proxy declared beside the simulator in
+`compose/features/simulator.yml`. It is deliberately unpublished: only the simulator
+calls it, and the test is already watching the topic.
+
 ### Scoping without header propagation
 
 Assume `X-Test-Id` does **not** survive the hop: the test drives service A, A calls the
@@ -625,6 +661,29 @@ it a **dedicated environment** with the behaviour baked into an overlay.
 `SimulatorProbe` wraps the admin API. Keep a genuine behavioural simulator — state
 machines, a controllable clock — as a separate service for what rules cannot express.
 When you build one, only `SimulatorProbe` changes; no test does.
+
+`compose/features/simulator-nodered.yml` is that claim, tested. It swaps WireMock for
+Node-RED, whose flow answers the same four admin endpoints from `compose/nodered/simulator.js`,
+and the whole suite passes unchanged — same `SimulatorProbe`, same `Simulator.kt`, same
+tests. Swapping is two lines in the environment file, plus the Toxiproxy upstream port:
+
+```yaml
+compose:
+  - compose/features/simulator-nodered.yml     # instead of simulator.yml
+services:
+  store-simulator: 1880                        # instead of 8080
+```
+
+Choose it when the mock has to *behave* rather than answer: multi-step choreography, a
+per-test state machine, a response that depends on what the system did in between. The
+cost is that matching, templating and the request journal become yours to maintain —
+the version here implements the subset terra calls and refuses anything else loudly,
+which is the only safe way to ship a partial one.
+
+What stays the same either way is the shape of a setup: a test POSTs a **rule**, never
+a flow. The graph is fixed at container start, so there is no deploy to race and no
+route for two tests to fight over — concurrency comes from the rules being data,
+scoped by an id only the registering test generated.
 
 ---
 
@@ -851,27 +910,6 @@ combination you use:
 ```properties
 org.gradle.configuration-cache.entries-per-key=8
 ```
-
----
-
-## Traps already paid for
-
-Every one of these cost real time here. They are fixed in terra; they will bite
-again in your own compose files.
-
-| Trap | Symptom | Fix |
-|---|---|---|
-| Compose resolves relative bind mounts against the **first `-f` file's** directory | volume silently becomes an empty directory | `--project-directory` (terra does this) |
-| Overriding `command:` skips nginx's `/docker-entrypoint.d/` | `localhost` → `::1` → connection refused in healthchecks | healthcheck on `127.0.0.1`, never `localhost` |
-| Kafka advertises its own address | clients redirected to an unreachable port | `hostPorts:` — a port derived from the fingerprint |
-| Gradle caches the test task | second environment reports `BUILD SUCCESSFUL in 1s`, runs nothing | `outputs.upToDateWhen { false }` |
-| Identities derived from the environment's runId | duplicate-key errors on the second run against a retained environment | per-execution `TERRA_EXEC_ID` |
-| Batch-reading Kafka after a checkpoint | another test's events interleaved; looks like an ordering bug | the read predicate is mandatory |
-| Awaitility reports its own timeout | `ConditionTimeoutException: … null` | `eventually` rethrows the last real failure |
-| Excluding a class descriptor in a JUnit filter | its methods still run | filter `MethodSource` too |
-| Cleanup queries that are not scoped | one test wipes every concurrent test's state | scope cleanup, or do not clean |
-| Matching log lines on `\w+Exception` | services name exception classes at INFO and WARN; unrelated tests fail | match on the error *level*, or on a line that is a stack trace |
-| Expression-bodied test (`fun x() = ctx.run { … }`) | JUnit reports `No tests found` — a non-Unit return is silently not discovered | use a block body |
 
 ---
 

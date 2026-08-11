@@ -30,6 +30,13 @@ object Terra {
     var kafkaService: String = "kafka"
 
     /**
+     * Where the simulator posts the events a stub asked it to publish. An address
+     * *inside* the container network, because the simulator is what calls it — the
+     * host ports in the descriptor are for the test, and the simulator cannot use them.
+     */
+    var kafkaRestUrl: String = "http://kafka-rest:8082"
+
+    /**
      * Log lines that are noise in *your* stack. Every entry is a decision somebody has
      * to defend in review, which is the point of keeping the list short and in one
      * place rather than sprinkling `@Suppress` over tests.
