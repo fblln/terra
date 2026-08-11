@@ -32,6 +32,11 @@ class ChaosProbe(private val control: HostPort, private val exclusive: Boolean) 
 
     private val client: HttpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(5))
+        // Java's default is HTTP/2, which over plain HTTP means every request opens
+        // with an h2c upgrade. Jetty and nginx shrug and answer 1.1; Node destroys
+        // the socket, and the test sees "header parser received no bytes" from a
+        // service that is running perfectly. No test traffic here needs HTTP/2.
+        .version(HttpClient.Version.HTTP_1_1)
         .build()
 
     fun <T> withNetworkPartition(vararg targets: String, block: () -> T): T {

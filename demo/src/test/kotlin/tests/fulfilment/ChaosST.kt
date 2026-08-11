@@ -74,7 +74,10 @@ class ChaosST : SystemTest() {
             .header("Content-Type", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString("""{"user":"$user","sku":"SKU-1"}"""))
             .build()
-        val response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString())
+        // HTTP/1.1 for the same reason the probes pin it: the default tries an h2c
+        // upgrade, which a Node-based dependency answers by dropping the connection.
+        val client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build()
+        val response = client.send(request, HttpResponse.BodyHandlers.ofString())
         return response.statusCode() to response.body()
     }
 }
