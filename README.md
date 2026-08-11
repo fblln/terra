@@ -23,7 +23,7 @@ from `terra` and running from the IDE are the same code path.
 [Writing a test](#writing-a-test) · [Isolation](#isolation-the-one-rule) ·
 [Services & config](#configuring-a-service) · [Mocks](#mocks-and-the-simulator) ·
 [Groups](#groups) · [Documenting tests](#documenting-tests) · [Commands](#commands) · [Reference](#reference) ·
-[Caching](#caching) · [Traps](#traps-already-paid-for) · [Not built](#not-built-yet)
+[Caching](#caching) · [Not built](#not-built-yet)
 
 ---
 
@@ -910,28 +910,6 @@ combination you use:
 ```properties
 org.gradle.configuration-cache.entries-per-key=8
 ```
-
----
-
-## Traps already paid for
-
-Every one of these cost real time here. They are fixed in terra; they will bite
-again in your own compose files.
-
-| Trap | Symptom | Fix |
-|---|---|---|
-| Compose resolves relative bind mounts against the **first `-f` file's** directory | volume silently becomes an empty directory | `--project-directory` (terra does this) |
-| Overriding `command:` skips nginx's `/docker-entrypoint.d/` | `localhost` → `::1` → connection refused in healthchecks | healthcheck on `127.0.0.1`, never `localhost` |
-| Kafka advertises its own address | clients redirected to an unreachable port | `hostPorts:` — a port derived from the fingerprint |
-| Gradle caches the test task | second environment reports `BUILD SUCCESSFUL in 1s`, runs nothing | `outputs.upToDateWhen { false }` |
-| Identities derived from the environment's runId | duplicate-key errors on the second run against a retained environment | per-execution `TERRA_EXEC_ID` |
-| Batch-reading Kafka after a checkpoint | another test's events interleaved; looks like an ordering bug | the read predicate is mandatory |
-| Awaitility reports its own timeout | `ConditionTimeoutException: … null` | `eventually` rethrows the last real failure |
-| Excluding a class descriptor in a JUnit filter | its methods still run | filter `MethodSource` too |
-| Cleanup queries that are not scoped | one test wipes every concurrent test's state | scope cleanup, or do not clean |
-| Matching log lines on `\w+Exception` | services name exception classes at INFO and WARN; unrelated tests fail | match on the error *level*, or on a line that is a stack trace |
-| Expression-bodied test (`fun x() = ctx.run { … }`) | JUnit reports `No tests found` — a non-Unit return is silently not discovered | use a block body |
-| Java's `HttpClient` defaults to HTTP/2, so plain HTTP opens with an h2c upgrade | Jetty and nginx shrug; **Node destroys the socket** — `header parser received no bytes` from a service that is running perfectly | every probe pins `HTTP_1_1` |
 
 ---
 
