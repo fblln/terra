@@ -22,7 +22,7 @@ from `terra` and running from the IDE are the same code path.
 **Contents** — [Try it](#try-it) · [Adopting this](#adopting-this-in-your-product) ·
 [Writing a test](#writing-a-test) · [Isolation](#isolation-the-one-rule) ·
 [Services & config](#configuring-a-service) · [Mocks](#mocks-and-the-simulator) ·
-[Groups](#groups) · [Commands](#commands) · [Reference](#reference) ·
+[Groups](#groups) · [Documenting tests](#documenting-tests) · [Commands](#commands) · [Reference](#reference) ·
 [Caching](#caching) · [Traps](#traps-already-paid-for) · [Not built](#not-built-yet)
 
 ---
@@ -654,6 +654,92 @@ Two axes, as typed constants so a rename is a compile error:
 $ terra run --tag returns
 skipping fulfilment — no selected tests
 ```
+
+---
+
+## Documenting tests
+
+A system test is the only executable description of what the system does, so it is
+worth reading by people who will not read Kotlin. terra generates Markdown from
+annotations on the tests themselves — one file per test class, kept next to them and
+committed, so a change to what a test claims shows up in the same diff as the change
+to the test.
+
+```bash
+./gradlew :demo:testDocs      # or :system-tests:testDocs in your repo
+```
+
+Output: [`demo/docs/`](demo/docs/tests/fulfilment/ReservationFlowST.md).
+
+### Annotating
+
+`@SuiteDoc` on the class, `@TestDoc` on each test. Both are optional — an
+unannotated class produces no file rather than an empty one.
+
+```kotlin
+@Environment("fulfilment")
+@SuiteDoc(
+    description = Desc("Reservation of stock end to end: HTTP, the read model and the topic."),
+    beforeTestSteps = [
+        Step(value = "Insert a SKU with onHand=3", expected = "Stock nothing else in the run can see"),
+    ],
+    labels = [Label(Tags.INVENTORY)],
+)
+class ReservationFlowST : SystemTest() {
+
+    @TestDoc(
+        description = Desc("A reservation debits stock, emits StockMoved and leaves the order RESERVED."),
+        steps = [
+            Step(value = "GET /health on orders-api", expected = "200 — the service is up"),
+            Step(value = "Reserve 2 of the SKU", expected = "StockMoved{delta=-2}; onHand=1 reserved=2"),
+        ],
+        labels = [Label(Tags.REGRESSION), Label(Tags.INVENTORY)],
+    )
+    @SharedEnvTest
+    fun `a reservation moves stock, emits an event and lands in the read model`(ctx: TerraContext) {
+```
+
+Backticked test names carry through to the headings unchanged, which is most of why
+this reads well without a separate title field.
+
+`@Label` takes the same `Tags` constants as `@Tag`, so the two axes stay in step —
+but nothing enforces that, because a label is documentation and a tag is selection.
+
+### Labels
+
+Write `docs/labels/<label>.md` by hand for each label you want explained. Generated
+files link to it, and the generator appends the tests carrying that label below a
+`<!-- generated part -->` marker; everything above the marker is yours and is never
+touched. A label with no file renders as plain text, so it costs nothing to skip.
+
+### Wiring it
+
+The annotations and the Markdown writer come from
+[skodjob/test-metadata-generator](https://github.com/skodjob/test-metadata-generator),
+which ships as a Maven plugin. Only the Mojo is Maven, though: it assembles a
+classpath Gradle already has and finds classes by walking a `src/test/java` tree,
+which is no use for Kotlin. Underneath, `MdGenerator` is plain reflection over
+RUNTIME-retention annotations and takes a `Class<?>`. So terra does not port it —
+[`terra.Docs`](junit/src/main/kotlin/terra/Docs.kt) calls it, with the test runtime
+classpath Gradle assembled. The annotations arrive with `terra:junit`; there is no
+second dependency to declare.
+
+Add to your `system-tests/build.gradle.kts`:
+
+```kotlin
+val testDocs = tasks.register<JavaExec>("testDocs") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass = "terra.Docs"
+    val classesDirs = sourceSets["test"].output.classesDirs
+    val docsDir = layout.projectDirectory.dir("docs").asFile.path
+    argumentProviders.add(CommandLineArgumentProvider { listOf(docsDir, classesDirs.asPath) })
+}
+```
+
+Like `systemTestPlan`, it reads compiled classes and starts nothing. It is safe on a
+plain `./gradlew build` and in CI; re-running it is idempotent, so a job that runs it
+and fails on a dirty tree is enough to keep the docs honest.
 
 ---
 

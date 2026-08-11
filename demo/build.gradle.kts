@@ -32,6 +32,18 @@ val systemTestPlan = tasks.register<JavaExec>("systemTestPlan") {
     }
 }
 
+// Markdown from the @SuiteDoc/@TestDoc annotations on the tests. Reads compiled
+// classes, so it needs no containers either — and it is committed, so a change to
+// what a test claims to do shows up in the diff next to the change to the test.
+val testDocs = tasks.register<JavaExec>("testDocs") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass = "terra.Docs"
+    val classesDirs = sourceSets["test"].output.classesDirs
+    val docsDir = layout.projectDirectory.dir("docs").asFile.path
+    argumentProviders.add(CommandLineArgumentProvider { listOf(docsDir, classesDirs.asPath) })
+}
+
 val systemTest = tasks.register<Test>("systemTest") {
     testClassesDirs = sourceSets["test"].output.classesDirs
     classpath = sourceSets["test"].runtimeClasspath

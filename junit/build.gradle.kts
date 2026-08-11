@@ -17,4 +17,10 @@ dependencies {
     api("org.mongodb:mongodb-driver-sync:5.9.1")
     api("com.fasterxml.jackson.module:jackson-module-kotlin:2.22.1")
     api("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.22.1")
+
+    // Test documentation: the @TestDoc/@SuiteDoc annotations and the Markdown writer
+    // behind `terra.Docs`. Packaged as a Maven plugin, but the jar is an ordinary one
+    // and the parts we use are plain reflection — non-transitive drops maven-plugin-api
+    // and the rest of the Mojo's machinery, which we do not run.
+    api("io.skodjob:test-docs-generator-maven-plugin:0.6.0") { isTransitive = false }
 }
