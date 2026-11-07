@@ -75,7 +75,7 @@ class KafkaProbe(
         check(found.isFailure) { "expected nothing matching on '$topic', got ${found.getOrNull()}" }
     }
 
-    fun markFor(topic: String): Checkpoint = marks[topic]
+    private fun markFor(topic: String): Checkpoint = marks[topic]
         ?: error(
             "no automatic checkpoint for '$topic'. Add it to `topics:` in the environment " +
                 "file, or take one yourself with checkpoint(\"$topic\")."

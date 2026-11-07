@@ -4,30 +4,16 @@ import terra.TestIds
 
 /**
  * The identities this product deals in — declared once, the way [Tags] declares the
- * groups.
+ * groups. Terra generates the part that has to be unique; the kinds are yours, and
+ * adding one is a line here rather than a change to the harness.
  *
- * Terra generates the part that has to be unique (the execution and the test) and
- * knows nothing about what your domain calls things. You name the kinds, as extension
- * functions, and every test then reads `ctx.ids.order()` with the kind checked by the
- * compiler instead of spelled out as a string at each call site.
- *
- * Adding one is a line here, not a change to the harness:
- *
- * ```kotlin
- * fun TestIds.shipment(n: Int = 1) = id("SHP", n)
- * ```
- *
- * Keep the prefixes short and recognisable in a log. `ORD-8f30-a1b2-001` should tell
- * whoever is grepping at 3am both what it is and which test made it.
+ * Keep the prefixes recognisable in a log: `ORD-8f30-a1b2-001` should tell whoever is
+ * grepping at 3am both what it is and which test made it.
  */
 
 fun TestIds.order(n: Int = 1) = id("ORD", n)
 
 fun TestIds.sku(n: Int = 1) = id("SKU", n)
 
-/**
- * The one that scopes a downstream mock. If the value a service passes onward is
- * unique to this test, a simulator rule can match on it and no header has to survive
- * the hop.
- */
+/** The one that scopes a downstream mock: unique per test, so a rule can match on it. */
 fun TestIds.user(n: Int = 1) = id("usr", n)
