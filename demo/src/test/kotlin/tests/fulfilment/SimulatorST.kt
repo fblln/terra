@@ -5,20 +5,12 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Tag
 import tests.*
 import org.assertj.core.api.Assertions.assertThat
+import java.time.Duration
 
 /**
- * Configuring a shared simulator per test, with no header propagation anywhere.
- *
- * The test drives service A, service A calls the mocked service B, and A does not
- * forward `X-Test-Id` — the normal situation. So the scoping lives in the data: every
- * test owns identities nothing else uses (`ctx.ids.user()`, `order()`, `sku()`), and
- * those travel inside the payload, which is the one thing that survives the hop.
- *
- * The rule is then self-scoping: it can only fire for a request carrying a value only
- * this test ever generated. No propagation, no reset, still concurrent.
- *
- * The trap this replaces is the shared fixture name. A rule about "frank" on a shared
- * simulator is a rule that fires for somebody else's test.
+ * Configuring a shared simulator per test, with no header propagation anywhere: the
+ * scoping lives in the payload, which is the one thing that survives the hop through
+ * the service under test. No propagation, no reset, still concurrent.
  */
 @Tag(Tags.REGRESSION) @Tag(Tags.SHIPPING)
 @Environment("fulfilment")
@@ -66,7 +58,46 @@ class SimulatorST : SystemTest() {
             .containsExactlyInAnyOrder(ctx.ids.sku(), ctx.ids.sku(2))
     }
 
-    // There used to be a test here asserting that unscoped inspection was refused at
-    // runtime. It is now refused by the compiler: `ordersReceived` takes the user it
-    // scopes by and has no default, so the unscoped call cannot be written.
+    /**
+     * A dependency that answers now and reports the outcome later — the thing a canned
+     * response cannot do. The caller is unblocked immediately, and the event that says
+     * what actually happened arrives four seconds after the call, from the simulator
+     * rather than the test. A test cannot fake that by publishing the event itself,
+     * because it does not know when the service under test made the call.
+     *
+     * The absence assertion is the part that earns its keep: without it this test
+     * passes whether the delay is four seconds or zero.
+     */
+    @SharedEnvTest
+    fun `the carrier accepts immediately and ships four seconds later`(ctx: TerraContext) {
+        sim.shipOrder(ctx.ids.order(), after = Duration.ofSeconds(4))
+
+        val response = sim.submitOrder(ctx.ids.order())
+
+        assertThat(response.status).isEqualTo(201)
+        // Derived from the request, so the test knew it before the simulator said it —
+        // and so the event four seconds from now can carry the same one.
+        assertThat(response.json()["shipment"].asText()).isEqualTo("SHP-${ctx.ids.order()}")
+
+        ctx.kafka.shouldNotBePublished<ShipmentReady>("shipments", Duration.ofSeconds(2)) {
+            it.order == ctx.ids.order()
+        }
+
+        val shipped = ctx.kafka.shouldBePublished<ShipmentReady>("shipments") {
+            it.order == ctx.ids.order()
+        }
+        assertThat(shipped.state).isEqualTo("SHIPPED")
+    }
+
+    @SharedEnvTest
+    fun `the delay is the simulator's, so two tests do not wait for each other`(ctx: TerraContext) {
+        sim.shipOrder(ctx.ids.order(), after = Duration.ofSeconds(1))
+
+        assertThat(sim.submitOrder(ctx.ids.order()).status).isEqualTo(201)
+
+        val shipped = ctx.kafka.shouldBePublished<ShipmentReady>("shipments") {
+            it.order == ctx.ids.order()
+        }
+        assertThat(shipped.order).isEqualTo(ctx.ids.order())
+    }
 }

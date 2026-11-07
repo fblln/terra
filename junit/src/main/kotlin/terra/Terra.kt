@@ -1,21 +1,13 @@
 package terra
 
 /**
- * The handful of things terra cannot guess about your topology.
+ * The handful of things terra cannot discover: ports come from Docker, endpoints from
+ * the descriptor, topics from the environment file, but these appear nowhere it can
+ * read. A project states them once — see `TerraSetup` in the demo.
  *
- * Everything else it discovers: ports come from Docker, endpoints from the census,
- * topics from the environment file. These do not appear anywhere it can read, so a
- * project states them once — in a `@BeforeAll` on a base class, an `init` block, or a
- * `LauncherSessionListener` if you prefer it out of the test source entirely.
- *
- * ```kotlin
- * Terra.database = "fulfilment"
- * Terra.simulatorService = "carrier-mock"
- * ```
- *
- * Deliberately settable rather than injected: these are constants of the project, not
- * of a test, and threading them through every probe constructor would put topology
- * naming into the signature of things that should not care.
+ * Settable rather than injected: they are constants of the project, not of a test, and
+ * threading them through every probe constructor would put topology naming into the
+ * signature of things that should not care.
  */
 object Terra {
 
@@ -38,8 +30,8 @@ object Terra {
 
     /**
      * Log lines that are noise in *your* stack. Every entry is a decision somebody has
-     * to defend in review, which is the point of keeping the list short and in one
-     * place rather than sprinkling `@Suppress` over tests.
+     * to defend in review, which is why the list is short and in one place rather than
+     * `@Suppress` sprinkled over tests.
      */
     val allowedLogPatterns: MutableList<Regex> = mutableListOf()
 }

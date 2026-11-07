@@ -21,35 +21,18 @@ import java.time.Duration
  *
  * Terra knows nothing about your endpoints or your payloads, so it exposes stubbing,
  * sending and inspection, and you name the operations — the same way you name your
- * identifiers and your tags:
- *
- * ```kotlin
- * // system-tests/src/test/kotlin/tests/Simulator.kt
- * fun SimulatorProbe.acceptOrders() =
- *     stub(path = "/orders", priority = 5, status = 201, body = """{"status":"ACCEPTED"}""")
- *
- * fun SimulatorProbe.rejectOrdersFrom(user: String) =
- *     stub(path = "/orders", priority = 1, status = 409, body = """{"status":"REJECTED"}""",
- *          matchingBody = "${'$'}[?(@.user == '${'$'}user')]")
- * ```
+ * identifiers and your tags. See `Simulator.kt` in the demo.
  *
  * The trap all of this replaces is the shared fixture name: a rule about `"frank"` on
  * a shared mock is a rule that fires for somebody else's test. Whenever you put a
  * literal in a matcher, ask what stops another test using the same literal.
- *
- * If your services ever do propagate `X-Test-Id`, [scopedByTestIdHeader] adds header
- * matching on top. Opt-in, because a rule matching a header that never arrives is a
- * rule that silently never fires.
  *
  * Backed by WireMock's admin API; no test needs to know that.
  */
 class SimulatorProbe(
     private val endpoint: HostPort,
     private val testId: String,
-    private val scopeByHeader: Boolean = false,
 ) {
-
-    fun scopedByTestIdHeader() = SimulatorProbe(endpoint, testId, scopeByHeader = true)
 
     private val client: HttpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(5))
@@ -101,7 +84,6 @@ class SimulatorProbe(
             put("method", method)
             put("urlPath", path)
             matchingBody?.let { putArray("bodyPatterns").addObject().put("matchesJsonPath", it) }
-            if (scopeByHeader) putObject("headers").putObject("X-Test-Id").put("equalTo", testId)
         }
         val mapping = mapper.createObjectNode().apply {
             put("priority", priority)
@@ -162,7 +144,6 @@ class SimulatorProbe(
         val query = mapper.createObjectNode().apply {
             put("method", method)
             put("urlPath", path)
-            if (scopeByHeader) putObject("headers").putObject("X-Test-Id").put("equalTo", testId)
         }
         val response = post("/__admin/requests/find", mapper.writeValueAsString(query)).expect(200)
         return mapper.readTree(response.body)["requests"]
@@ -171,9 +152,9 @@ class SimulatorProbe(
     }
 
     /**
-     * Remove this test's rules — by the metadata tag, so it is scoped whether or not
-     * the header is. Called for you when the test ends; forgetting would be untidy
-     * rather than harmful, because ids are unique per execution.
+     * Remove this test's rules, by the metadata tag. Called for you when the test
+     * ends; forgetting would be untidy rather than harmful, because ids are unique
+     * per execution.
      */
     fun reset() {
         runCatching {
@@ -191,7 +172,7 @@ class SimulatorProbe(
         // without propagation exercises the same path its services do.
         val request = HttpRequest.newBuilder(URI("http://$endpoint$path"))
             .timeout(Duration.ofSeconds(10L * timeoutScale))
-            .header("X-Test-Id", if (simulatedTraffic && !scopeByHeader) "not-propagated" else testId)
+            .header("X-Test-Id", if (simulatedTraffic) "not-propagated" else testId)
             .header("Content-Type", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(body))
             .build()

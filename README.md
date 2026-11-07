@@ -1,5 +1,10 @@
 # terra — system test harness
 
+> **Archived.** terra is now maintained internally at Stellantis, where it is adopted
+> and developed further. This repository is the public record of the design: it still
+> runs, but it takes no issues or pull requests and will not be released again.
+> Everything below describes what is here, not how to roll it out.
+
 `terra` owns container lifecycle. Gradle compiles and runs tests. The test JVM
 touches nothing — it reads a JSON descriptor and connects to what is already there.
 
@@ -19,18 +24,16 @@ terra run fulfilment
 The descriptor is the only contract between the two sides. Once it exists, running
 from `terra` and running from the IDE are the same code path.
 
-**Contents** — [Try it](#try-it) · [Adopting this](#adopting-this-in-your-product) ·
-[Writing a test](#writing-a-test) · [Isolation](#isolation-the-one-rule) ·
-[Services & config](#configuring-a-service) · [Mocks](#mocks-and-the-simulator) ·
-[Groups](#groups) · [Documenting tests](#documenting-tests) · [Commands](#commands) · [Reference](#reference) ·
-[Caching](#caching) · [Not built](#not-built-yet)
+**Contents** — [Try it](#try-it) · [Layout](#layout) · [Writing a test](#writing-a-test) ·
+[Isolation](#isolation-the-one-rule) · [Mocks](#mocks-and-the-simulator) ·
+[Commands](#commands) · [Reference](#reference) · [Invariants](#invariants)
 
 ---
 
 ## Try it
 
-This repository runs as-is on public images. `demo/` stands in for your
-`system-tests/` module.
+This repository runs as-is on public images. `demo/` is the worked example — it stands
+in for the `system-tests/` module of a product repository.
 
 ```bash
 ./terra run                    # two environments in sequence, ~55s warm
@@ -39,172 +42,56 @@ This repository runs as-is on public images. `demo/` stands in for your
 ./terra down fulfilment
 ```
 
+Docker is the only prerequisite; the Gradle wrapper fetches the rest.
+
 ---
 
-## Adopting this in your product
-
-### 1. What goes where
-
-terra is generic. Environments, compose files and tests are yours and belong
-together, in one module.
+## Layout
 
 ```text
-your-monorepo/
-  services/
-    order-service/            unit + component tests (Testcontainers) stay here
-    inventory-service/
-  system-tests/               ← everything system-level
-    build.gradle.kts
-    environments/             fulfilment.yml  returns.yml  …
-    compose/
-      base.yml                shared infrastructure
-      stacks/                 one per domain slice
-      features/               optional components
-      faults/                 fault injection overlays
-    src/test/kotlin/tests/
-      inventory/ReserveStockST.kt
-      shipping/…
-    src/test/resources/junit-platform.properties
-  # terra itself is a separate repository — checked out beside this one,
-  # or a published dependency. It is not vendored into your tree.
+terra/
+  cli/          the `terra` command: fingerprinting, compose, descriptors, collectors
+  junit/        the test-side library: TerraContext, the probes, discovery, docs
+  compose/      the demo topology — base, stacks, the simulator, chaos
+  environments/ fulfilment.yml, returns.yml — two topologies over a shared base
+  demo/         the worked example suite, and the generated docs it produces
+  terra         thin launcher; rebuilds the CLI then execs it
 ```
 
-Component tests stay in the service repositories. Testcontainers is the right tool
-one level down; it does not own the system topology.
+In a product repository, `environments/`, `compose/` and the tests live together in
+one `system-tests/` module, and terra is a dependency rather than a sibling. Component
+tests stay in the service repositories: Testcontainers is the right tool one level
+down, and it does not own the system topology.
 
-### 2. Wire the build
+### What the demo covers
 
-`settings.gradle.kts`:
+Seven classes, each the executable statement of one part of the design:
+
+| | |
+|---|---|
+| `TopologyST` | discovery, declared configuration, internal vs. host addresses, capabilities, migrations |
+| `KafkaST` | both Kafka paths — automatic checkpoints and manual ones — and the window/authorship split |
+| `MongoST` | the normal seed-act-assert shape, and what `@ExclusiveEnvTest` is actually for |
+| `SimulatorST` | per-test rules on a shared mock with no header propagation; a dependency that answers now and reports later |
+| `ChaosST` | what the service does while a dependency is unreachable, and that it recovers |
+| `ReservationFlowST` | an end-to-end flow, and the worked example for generated documentation |
+| `ReturnsST` | a second topology over the same base, and refusal when a capability is absent |
+
+---
+
+## Writing a test
 
 ```kotlin
-includeBuild("../terra")     // a sibling checkout while it moves; a coordinate later
-```
-
-`system-tests/build.gradle.kts`:
-
-```kotlin
-import org.gradle.process.CommandLineArgumentProvider
-
-plugins { kotlin("jvm") }
-
-dependencies {
-    testImplementation("terra:junit")
-    testImplementation(project(":services:order-service:api"))     // clients, event schemas
-    testImplementation("org.assertj:assertj-core:3.26.3")
-}
-
-// Nothing here but system tests, so the default `test` task would only ever fail:
-// there is no environment during a plain `./gradlew build`.
-tasks.test { enabled = false }
-
-val PASSTHROUGH = listOf(
-    "TERRA_ENV", "TERRA_ENV_FILE", "TERRA_SHARD", "TERRA_RUN_ID",
-    "TERRA_TAGS", "TERRA_EXCLUDE_TAGS",
-)
-
-val systemTest = tasks.register<Test>("systemTest") {
-    testClassesDirs = sourceSets["test"].output.classesDirs
-    classpath = sourceSets["test"].runtimeClasspath
-    useJUnitPlatform()
-    testLogging { events("passed", "failed", "skipped") }
-
-    // A system test's real input is a live environment, which Gradle cannot hash.
-    // Without this a task that passed once is UP-TO-DATE forever — including against
-    // a *different* environment, which is silently no test at all.
-    outputs.upToDateWhen { false }
-
-    PASSTHROUGH.forEach { n -> providers.environmentVariable(n).orNull?.let { environment(n, it) } }
-}
-
-// Discovery without execution, so `run --tag x` knows which environments it needs.
-val systemTestPlan = tasks.register<JavaExec>("systemTestPlan") {
-    dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets["test"].runtimeClasspath
-    mainClass = "terra.Discover"
-    val classesDirs = sourceSets["test"].output.classesDirs
-    argumentProviders.add(CommandLineArgumentProvider { listOf(classesDirs.asPath) })
-    PASSTHROUGH.forEach { n -> providers.environmentVariable(n).orNull?.let { environment(n, it) } }
-}
-```
-
-`system-tests/src/test/resources/junit-platform.properties`:
-
-```properties
-junit.jupiter.execution.parallel.enabled=true
-junit.jupiter.execution.parallel.mode.default=same_thread
-junit.jupiter.execution.parallel.config.strategy=fixed
-junit.jupiter.execution.parallel.config.fixed.parallelism=2
-```
-
-`same_thread` by default; `@SharedEnvTest` opts each test into concurrency. Safe
-direction to be wrong in.
-
-### 3. Describe your first environment
-
-Start with **one** environment containing your smallest useful slice. Resist adding a
-second until the first is green in CI.
-
-```yaml
-# system-tests/environments/fulfilment.yml
-compose:
-  - compose/base.yml
-  - compose/stacks/fulfilment.yml
-
-services:                 # service -> container port; terra discovers the host port
-  gateway: 8080
-  orders-api: 8080
-  mongodb: 27017
-  kafka: 9092
-
-hostPorts:                # only services that hand out their own address
-  kafka: 9092
-
-topics: [shipments, stock-moves]     # created if absent; checkpointed every test
-
-health: gateway:8080/actuator/health
-
-capabilities: [kafka, mongo, orders]
-
-vars:
-  ORDERS_VERSION: 1.17.4
-  ORDERS_LOG_LEVEL: INFO
-  # …the rest of the service configuration
-```
-
-Rules that save a day each:
-
-- **Never publish fixed host ports** in compose. Docker assigns, terra
-  discovers. Fixed ports stop two environments coexisting, which is what makes
-  attach-and-run possible.
-- **Every service needs a healthcheck.** Readiness is `up -d --wait`; terra does
-  not poll. No healthcheck means "ready" means "the process started".
-- **The topology must stay startable by hand.** Whatever `terra` runs, this must
-  work too:
-  ```bash
-  KAFKA_HOST_PORT=29092 docker compose -f compose/base.yml -f compose/stacks/fulfilment.yml up
-  ```
-
-### 4. Write your first test
-
-```kotlin
-package tests.inventory
-
-import terra.*
-import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Tag
-import org.assertj.core.api.Assertions.assertThat
-import tests.Tags
-
-@Tag(Tags.SMOKE) @Tag(Tags.INVENTORY)
-@Environment("fulfilment")
-class ReserveStockST : SystemTest() {
+@Tag(Tags.REGRESSION) @Tag(Tags.INVENTORY)   // groups; as many as it belongs to
+@Environment("fulfilment")                   // topology, by name, never file paths
+class ReserveStockST : SystemTest() {         // suffix ST
 
     @BeforeEach
     fun seed(ctx: TerraContext) {
         ctx.mongo.inventory.insert(ctx.ids.sku(), "onHand" to 3)
     }
 
-    @SharedEnvTest
+    @SharedEnvTest                           // runs concurrently with other shared tests
     fun `reserves the last unit exactly once`(ctx: TerraContext) {
         ctx.http("orders-api").post("/orders", """{"sku":"${'$'}{ctx.ids.sku()}"}""")
 
@@ -214,79 +101,10 @@ class ReserveStockST : SystemTest() {
 }
 ```
 
-### 5. Run it
-
-```bash
-terra up fulfilment --project-dir system-tests    # once, pay the startup
-# …then the IDE run gutter works indefinitely, instantly
-terra run --project-dir system-tests --tag inventory
-terra down fulfilment --project-dir system-tests
-```
-
-The test JVM never starts containers. With no environment running you get the command
-that fixes it, not a forty-second stall:
-
-```text
-Cannot run: no environment is running for environment 'fulfilment'.
-
-    ./terra up fulfilment
-
-The test JVM never starts containers — that is terra's job.
-```
-
-### 6. Run it in CI
-
-```yaml
-strategy:
-  matrix: { shard: [1, 2, 3, 4] }
-steps:
-  - run: terra run --project-dir system-tests
-    env:
-      TERRA_SHARD: ${{ matrix.shard }}/4
-  - uses: actions/upload-artifact@v4
-    if: always()
-    with: { name: results-${{ matrix.shard }}, path: system-tests/build/results/ }
-```
-
-Anything more in that file is orchestration a developer cannot run.
-
-### 7. Suggested rollout order
-
-| | Do | Done when |
-|---|---|---|
-| 1 | One environment, three smoke tests, run locally | `terra run` is green on a laptop |
-| 2 | The same in CI, artifacts uploaded | a deliberate failure is diagnosable from the artifact alone |
-| 3 | Port ~20 existing scenarios; add tags | `terra list` reads like a coverage map |
-| 4 | Second environment; check the fingerprint grouping pays | two topologies run in sequence |
-| 5 | Sharding across CI runners | wall-clock scales with shard count |
-| 6 | Mocks consolidated behind `SimulatorProbe` | no test knows what the mock server is |
-| 7 | Fault environments (`compose/faults/`), exclusive tests | the nasty cases have a home |
-
-Do not build the results dashboard, the flake tracker or the custom reporter until
-someone has asked twice.
-
----
-
-## Writing a test
-
-### The shape
-
-```kotlin
-@Tag(Tags.REGRESSION) @Tag(Tags.INVENTORY)   // groups; as many as it belongs to
-@Environment("fulfilment")                   // topology, by name, never file paths
-class ReserveStockST : SystemTest() {        // suffix ST
-
-    @BeforeEach
-    fun seed(ctx: TerraContext) { … }      // fixtures, per test
-
-    @SharedEnvTest                           // runs concurrently with other shared tests
-    fun `reserves the last unit exactly once`(ctx: TerraContext) { … }
-}
-```
-
 `ctx` arrives by parameter injection. There is no static `Terra.INSTANCE`, because
 global mutable state is how a suite discovers three hundred tests later that it can
-never be parallelised.
+never be parallelised. Keep the receiver explicit: `ctx.mongo` cannot be shadowed by a
+field of the same name, and `ctx.run { mongo… }` can.
 
 ### What `ctx` gives you
 
@@ -302,185 +120,77 @@ never be parallelised.
 | `ctx.requires("simulator")` | refuse early if the topology lacks a capability |
 | `eventually { … }` | polling assertion, scaled 20× under a debugger |
 
-### What terra does not know
-
-Terra discovers ports from Docker, endpoints from the descriptor and topics from the
-environment file. Four things it cannot discover, stated once per JVM — registered by
-ServiceLoader so nothing has to remember to call it:
-
-```kotlin
-// system-tests/src/test/kotlin/tests/TerraSetup.kt
-class TerraSetup : LauncherSessionListener {
-    override fun launcherSessionOpened(session: LauncherSession) {
-        Terra.database = "fulfilment"            // the database your services write to
-        Terra.simulatorService = "carrier-mock"  // which service is the programmable mock
-        Terra.allowedLogPatterns += Regex("""Connection refused.*retrying""")
-    }
-}
-```
-
-`Terra.mongoService` and `Terra.kafkaService` default to `mongodb` and `kafka`; set
-them if your topology names them otherwise.
-
-Everything else your project names, it names as extensions — identifiers, collections
-and mock operations all follow the same pattern, so there is one convention to learn
-rather than three.
-
-### Your own identifiers
-
-Terra generates the part that must be unique — the execution and the test — and knows
-nothing about what your domain calls things. You name the kinds once, next to your
-tags:
-
-```kotlin
-// system-tests/src/test/kotlin/tests/Ids.kt
-fun TestIds.order(n: Int = 1) = id("ORD", n)
-fun TestIds.sku(n: Int = 1) = id("SKU", n)
-fun TestIds.customer(n: Int = 1) = id("CUS", n)
-```
-
-```kotlin
-ctx.mongo.orders.insert(ctx.ids.order(), "sku" to ctx.ids.sku())
-ctx.simulator.rejectOrdersFrom(ctx.ids.customer())
-```
-
-Adding a kind is a line in your own project, not a change to the harness — and the
-kind is checked by the compiler rather than spelled as a string at each call site.
-`n` distinguishes several of the same kind inside one test and is explicit rather
-than a counter, so a rerun produces the same ids, which matters when you are reading
-them back out of a log.
-
-Keep prefixes short and recognisable: `ORD-8f30-a1b2-001` should tell whoever is
-grepping at 3am both what it is and which test made it.
-
-If you would rather not import the extensions in every file, declare them as member
-extensions on a project base class (`abstract class FulfilmentTest : SystemTest()`)
-and they are in scope for every subclass.
-
-### Keep `ctx.` explicit
-
-Kotlin will happily let you drop the receiver:
-
-```kotlin
-fun `a test`(ctx: TerraContext) { ctx.run {          // don't
-    mongo.orders.insert(ids.order(), …)
-    http("orders-api").post("/carrier", …)
-} }
-```
-
-It reads tidily and it is a bad trade. `mongo`, `ids` and `http` now come from nowhere
-visible, and a reader has to know terra to know they are not locals, fields, or
-imports. That is the cost every day.
-
-The occasional cost is worse: an implicit receiver **can be shadowed**. Give the test
-class a field called `mongo`, or nest the block inside another scope function, and
-resolution silently changes to something else that also compiles. `ctx.mongo` cannot
-do that.
-
-Where the repetition genuinely grates, bind a named local — which says *more* than the
-receiver trick did, because it names the domain concept:
-
-```kotlin
-val blocked = ctx.ids.user()
-val order = ctx.ids.order()
-
-ctx.simulator.rejectOrdersFrom(blocked)
-ctx.mongo.orders.await(order) { it.getString("state") == "RESERVED" }
-```
-
 ### Shared or exclusive
 
+`@SharedEnvTest` only reads shared state and runs 2-at-a-time. `@ExclusiveEnvTest`
+drops, truncates, counts globally, restarts or flips shared configuration; JUnit's
+`@ResourceLock` guarantees no shared test overlaps it. If a test would be flaky when
+something else writes concurrently, it is exclusive.
+
+### What terra cannot discover
+
+Ports come from Docker, endpoints from the descriptor, topics from the environment
+file. Four things have to be stated once per JVM, registered by ServiceLoader so
+nothing has to remember to call it — see [`TerraSetup`](demo/src/test/kotlin/tests/TerraSetup.kt):
+
 ```kotlin
-@SharedEnvTest      // default: only reads shared state; runs 2-at-a-time
-@ExclusiveEnvTest   // drops, truncates, counts globally, restarts, flips shared config
+Terra.database = "fulfilment"            // the database your services write to
+Terra.simulatorService = "carrier-mock"  // which service is the programmable mock
+Terra.allowedLogPatterns += Regex("""Connection refused.*retrying""")
 ```
 
-If a test would be flaky when something else writes concurrently, it is exclusive.
-JUnit's `@ResourceLock` guarantees no shared test overlaps it — measured, not assumed.
-
-### Kafka assertions
-
-Declare the topics in the environment file and terra marks all of them at the
-start of every test, before it can act — so no test takes a checkpoint by hand:
-
-```yaml
-topics: [shipments, stock-moves]
-```
-```kotlin
-ctx.kafka.shouldBePublished<StockMoved>("stock-moves") { it.sku == ctx.ids.sku() }
-ctx.kafka.shouldNotBePublished<ShipmentReady>("shipments") { it.order == ctx.ids.order() }
-```
-
-The *window* is handled for you; the *authorship* is still yours, so match on an id
-only this test generated. `shouldNotBePublished` defaults to a two-second timeout,
-because an absence proven with the thirty-second default costs thirty seconds every
-run. `checkpoint`/`awaitAfter` remain for topics outside the declared set.
+`Terra.mongoService` and `Terra.kafkaService` default to `mongodb` and `kafka`.
+Everything else a project names, it names as extensions — identifiers
+([`Ids.kt`](demo/src/test/kotlin/tests/Ids.kt)), collections and mock operations
+([`Simulator.kt`](demo/src/test/kotlin/tests/Simulator.kt)) all follow one pattern, so
+there is a single convention to learn rather than three. Adding a kind is a line in
+your own project, checked by the compiler rather than spelled as a string at each call
+site.
 
 ### Environment migrations
 
-Setup that belongs to the environment rather than to a test — topics, indexes, static
-reference data — registered by ServiceLoader and run once per JVM, in order, before
-the first test attaches:
-
-```kotlin
-class SeedReferenceData : EnvironmentMigration {
-    override val name = "seed carriers and warehouses"
-    override val environment = "fulfilment"
-    override val order = 10
-
-    override fun apply(ctx: MigrationContext) {
-        ctx.topic("returns-requested")                       // create if absent
-        ctx.mongo.getCollection("carriers").replaceOne(…, upsert())
-    }
-}
-```
-
+Setup belonging to the environment rather than to a test — topics, indexes, static
+reference data — registered by ServiceLoader and run once per JVM, in order, before the
+first test attaches. See [`SeedReferenceData`](demo/src/test/kotlin/tests/SeedReferenceData.kt).
 **They must be idempotent**: the environment outlives the JVM, so an IDE re-run runs
-them again and so does every shard. Topics listed under `topics:` are created for you
-before any migration runs. The alternative — a `@BeforeAll` in whichever class happens
-to run first — is an ordering dependency wearing a different hat.
+them again and so does every shard. The alternative — a `@BeforeAll` in whichever class
+happens to run first — is an ordering dependency wearing a different hat.
 
-### Network faults
+### Groups
 
-A Toxiproxy sits between a caller and a dependency. Disabling it severs the connection
-while leaving the dependency healthy and directly observable *by the test*, which is
-what makes assertions during an outage possible:
+Groups are `@Tag`, selected with JUnit's own tag expressions (`&`, `|`, `!`, `any()`,
+`none()`), so a test belongs to as many as it genuinely belongs to.
 
-```kotlin
-@ExclusiveEnvTest
-fun `a partition makes the dependency unreachable, and it recovers`(ctx: TerraContext) {
-    ctx.chaos.withNetworkPartition("store-simulator") {
-        // unreachable to the caller in here…
-        assertThat(ctx.http("store-simulator").get("/__admin/mappings").status).isEqualTo(200)
-        // …but the test can still see it
-    }
-    // healed — on success, on failure, and on cancellation
-}
+```bash
+terra run --tag inventory
+terra run --tag regression --exclude-tag flaky
 ```
 
-This replaces a `compose/faults/` overlay for anything short-lived: no second topology,
-no restart, and recovery is asserted in the same test as the failure.
+Two axes, as typed constants so a rename is a compile error: **tier** (`smoke`,
+`regression`, `flaky` — a tag, not a quarantine directory) and **domain**
+(`inventory`, `shipping`, `returns`). `run` asks for a plan first and skips
+environments with no selected tests.
 
-**Always exclusive.** A severed connection is severed for everybody, so this is the one
-probe that cannot be scoped by identity. It refuses outside `@ExclusiveEnvTest` rather
-than quietly cutting off whatever else is in flight.
+### Generated documentation
 
-The proxy has to be in the path from the start — you cannot reroute a running service —
-so the caller is pointed at the proxied address as a topology decision, and it is
-transparent while enabled.
+A system test is the only executable description of what the system does, so terra
+generates Markdown from `@SuiteDoc`/`@TestDoc` annotations — one file per class, kept
+beside the tests and committed, so a change to what a test claims shows up in the same
+diff as the change to the test. Both annotations are optional; an unannotated class
+produces no file.
 
-### Things not to do
+```bash
+./gradlew :demo:testDocs
+```
 
-| Don't | Do |
-|---|---|
-| start a container | name a topology with `@Environment` |
-| `Thread.sleep(5000)` | `eventually { … }` |
-| truncate a collection or topic | derive ids; take a checkpoint |
-| hard-code a port | `ctx.endpoint(service)` |
-| use a shared fixture name (`"frank"`) | `ctx.ids.user()` |
-| hide the context with `ctx.run { }` / `with(ctx)` | keep `ctx.` explicit; see below |
-| share fixtures between tests | seed in `@BeforeEach` |
-| put a plain `@Test` on it | `@SharedEnvTest` / `@ExclusiveEnvTest` |
+Output: [`demo/docs/`](demo/docs/tests/fulfilment/ReservationFlowST.md), with
+hand-written label pages under [`demo/docs/labels/`](demo/docs/labels) whose content
+above the `<!-- generated part -->` marker is never touched. The annotations and the
+Markdown writer come from
+[skodjob/test-metadata-generator](https://github.com/skodjob/test-metadata-generator),
+which ships as a Maven plugin; only the Mojo is Maven, so
+[`terra.Docs`](junit/src/main/kotlin/terra/Docs.kt) calls `MdGenerator` directly with
+the test runtime classpath Gradle already assembled.
 
 ---
 
@@ -499,306 +209,56 @@ layer, which is why there is only one rule to remember:
 | Network faults | **not scopeable** — global by nature, so always `@ExclusiveEnvTest` |
 | HTTP | `X-Test-Id` header at the first hop, for log searching |
 
-```kotlin
-val mark = ctx.kafka.checkpoint("shipments")   // read forward from here
-ctx.mongo.orders.insert(ctx.ids.order(), …)    // an id nothing else can collide with
-```
-
 A checkpoint bounds the *window*, not the *authorship* — other tests publish into the
-same window — so always also filter by an id only this test knows.
+same window — so always also filter by an id only this test knows. Identities come from
+`TERRA_EXEC_ID`, which is **per execution, not per environment**: re-running a test
+against a retained environment must not reuse ids.
 
-Identities come from `TERRA_EXEC_ID`, which is **per execution, not per
-environment**: re-running a test against a retained environment must not reuse ids.
+### Configuration is part of the fingerprint
 
----
-
-## Configuring a service
-
-A service with a hundred environment variables has its largest failure surface exactly
-there, so terra makes configuration assertable.
-
-Values are declared once, in the environment file; the compose file only names them
-with a fallback so `docker compose config` resolves while the fingerprint is still
-being computed:
-
-```yaml
-# environments/fulfilment.yml
-vars:
-  ORDERS_LOG_LEVEL: INFO
-  ORDERS_FEATURE_EXPRESS_LANE: "false"
-```
-```yaml
-# compose/stacks/fulfilment.yml
-environment:
-  ORDERS_LOG_LEVEL: ${ORDERS_LOG_LEVEL:-INFO}
-```
-
-**Precedence: environment variable → environment file → compose default.**
+Values are declared once in the environment file; the compose file only names them with
+a fallback, so `docker compose config` resolves while the fingerprint is still being
+computed. Precedence is **environment variable → environment file → compose default**.
 
 ```bash
 TERRA_VAR_ORDERS_LOG_LEVEL=DEBUG ./terra up fulfilment
-```
-```text
-superseding terra-8808c487 (fingerprint 8808c487 -> ce5a875b)
+# superseding terra-8808c487 (fingerprint 8808c487 -> ce5a875b)
 ```
 
-Configuration is part of the fingerprint, so a changed value starts a *new* environment
-and reaps the old one. You cannot test a new configuration against a service still
-running the old one.
+A changed value starts a *new* environment and reaps the old one: you cannot test a new
+configuration against a service still running the old one. Assert on it like anything
+else — services expose their configuration, and `TopologyST` pins it.
 
-Assert on it like anything else — the service exposes its configuration
-(`/actuator/configprops` in Spring):
-
-```kotlin
-val config = ctx.http("orders-api").get("/config").json()
-assertThat(config["featureExpressLane"].asBoolean()).isFalse()
-```
-
-### Static inside, dynamic outside
-
-One database, two addresses, and only one of them is dynamic:
-
-| From | Address | Dynamic? |
-|---|---|---|
-| another **service**, inside the Docker network | `mongodb:27017` | no — service name, container port |
-| a **test**, from the host | `localhost:57457` | yes — Docker chose it at `up` |
-
-Configure services with the internal name; discover the external one from the
-descriptor. `AddressingST` pins both halves.
-
-Three cases where an address really is dynamic: the service publishes its own address
-(→ `hostPorts:`, as Kafka does); the dependency lives outside the compose project
-(→ `vars:` or an `external: true` network); the value is only knowable after start
-(→ no env-var answer exists; mount a file).
+Two rules that save a day each: **never publish fixed host ports** (Docker assigns,
+terra discovers — fixed ports stop two environments coexisting), and **every service
+needs a healthcheck**, because readiness is `up -d --wait` and terra does not poll.
+Services that hand out their own address, as Kafka does, go under `hostPorts:` and get
+a stable port derived from the fingerprint.
 
 ---
 
 ## Mocks and the simulator
 
-Every test can reconfigure the shared simulator at runtime. Nothing restarts and
-nothing is reset.
+Every test reconfigures the shared simulator at runtime. Nothing restarts, nothing is
+reset, and rules are scoped on the **payload** rather than a header — the assumption
+here is that `X-Test-Id` does *not* survive the hop, so no service changes are
+required. A rule matching a value only one test generated can only fire for that test.
+Where a call carries no identity at all (`GET /rates`, a token fetch), the honest
+options are an `@ExclusiveEnvTest` configured globally, or a dedicated environment with
+the behaviour baked into an overlay.
 
-```kotlin
-@BeforeEach
-fun defaultBehaviour(ctx: TerraContext) {
-    ctx.requires("simulator")
-    ctx.simulator.acceptOrders()
-}
+`SimulatorProbe` wraps the WireMock admin API, and no test knows that — which is what
+makes it replaceable by a genuine behavioural simulator, for a mock that has to
+*behave* rather than answer, without a test changing.
 
-@SharedEnvTest
-fun `a blocked user is rejected while everyone else is served`(ctx: TerraContext) {
-    val blocked = ctx.ids.user()               // usr-8f30-a1b2-001; nobody else has it
-
-    ctx.simulator.rejectOrdersFrom(blocked, status = 409, reason = "USER_BLOCKED")
-
-    assertThat(ctx.simulator.placeOrder(user = blocked).status).isEqualTo(409)
-    assertThat(ctx.simulator.placeOrder(user = ctx.ids.user(2)).status).isEqualTo(201)
-}
-```
-
-### A dependency that answers now and reports later
-
-A canned response cannot express the dependency that accepts a request and says what
-happened afterwards. `thenPublish` can: the caller is answered immediately, and the
-event lands on Kafka after the delay the rule asked for.
-
-```kotlin
-fun SimulatorProbe.shipOrder(order: String, after: Duration = Duration.ofSeconds(4)) = stub(
-    path = "/orders", priority = 1, status = 201,
-    body = """{"status":"ACCEPTED","shipment":"SHP-{{jsonPath request.body '$.order'}}"}""",
-    matchingBody = "$[?(@.order == '$order')]",
-    thenPublish = SimulatorProbe.Publish(
-        topic = "shipments",
-        value = """{"order":"{{jsonPath originalRequest.body '$.order'}}","state":"SHIPPED"}""",
-        after = after,
-    ),
-)
-```
-
-A test cannot fake this by publishing the event itself, because it does not know when
-the service under test made the call. `DelayedShipmentST` asserts the absence first
-and the arrival second — without the absence the test passes whether the delay is four
-seconds or zero.
-
-Two details that are not optional. **Derive the id from the request** rather than
-generating one: the response and the webhook are rendered independently, so
-`{{randomValue}}` in both produces two different values, while anything computed from
-the request body matches on both sides. And the webhook fires **from inside the
-container network**, so its address is a service name and a container port
-(`Terra.kafkaRestUrl`, default `http://kafka-rest:8082`), never an endpoint from the
-descriptor — those are addresses for the test, not for a service calling a service.
-
-The event reaches Kafka through a REST proxy declared beside the simulator in
-`compose/features/simulator.yml`. It is deliberately unpublished: only the simulator
-calls it, and the test is already watching the topic.
-
-### Scoping without header propagation
-
-Assume `X-Test-Id` does **not** survive the hop: the test drives service A, A calls the
-mocked service B, and A forwards nothing. That is the default assumption here, and no
-service changes are required.
-
-Rules therefore scope on the **payload**, using an identity only this test generated.
-The rule is self-scoping — it can only fire for a request carrying a value nobody else
-has. `SimulatorST` runs two such tests concurrently against the same container to
-prove it.
-
-The trap this replaces is the shared fixture name. Whenever you put a literal in a
-matcher, ask what stops another test using the same literal.
-
-If your services ever do propagate the header,
-`ctx.simulator.scopedByTestIdHeader()` adds header matching on top. Opt-in, because a
-rule matching a header that never arrives is a rule that silently never fires.
-
-### When nothing test-unique reaches the mock
-
-Some calls carry no identity — `GET /rates`, a token fetch. Nothing can scope them.
-Two honest options: make it an **`@ExclusiveEnvTest`** and configure globally, or give
-it a **dedicated environment** with the behaviour baked into an overlay.
-
-### It is WireMock, and tests never find out
-
-`SimulatorProbe` wraps the admin API. Keep a genuine behavioural simulator — state
-machines, a controllable clock — as a separate service for what rules cannot express.
-When you build one, only `SimulatorProbe` changes; no test does.
-
-`compose/features/simulator-nodered.yml` is that claim, tested. It swaps WireMock for
-Node-RED, whose flow answers the same four admin endpoints from `compose/nodered/simulator.js`,
-and the whole suite passes unchanged — same `SimulatorProbe`, same `Simulator.kt`, same
-tests. Swapping is two lines in the environment file, plus the Toxiproxy upstream port:
-
-```yaml
-compose:
-  - compose/features/simulator-nodered.yml     # instead of simulator.yml
-services:
-  store-simulator: 1880                        # instead of 8080
-```
-
-Choose it when the mock has to *behave* rather than answer: multi-step choreography, a
-per-test state machine, a response that depends on what the system did in between. The
-cost is that matching, templating and the request journal become yours to maintain —
-the version here implements the subset terra calls and refuses anything else loudly,
-which is the only safe way to ship a partial one.
-
-What stays the same either way is the shape of a setup: a test POSTs a **rule**, never
-a flow. The graph is fixed at container start, so there is no deploy to race and no
-route for two tests to fight over — concurrency comes from the rules being data,
-scoped by an id only the registering test generated.
-
----
-
-## Groups
-
-Groups are `@Tag`, so a test belongs to as many as it genuinely belongs to.
-
-```bash
-terra run --tag inventory
-terra run --tag "inventory | shipping"
-terra run --tag regression --exclude-tag flaky
-terra list --tag returns
-```
-
-Selection uses JUnit's own tag expressions — `&`, `|`, `!`, parentheses, `any()`,
-`none()`. Repeating `--tag` ORs them.
-
-Two axes, as typed constants so a rename is a compile error:
-
-- **tier** — `smoke`, `regression`, `flaky`. `flaky` is a tag, not a quarantine
-  directory: visible, runnable, excludable.
-- **domain** — `inventory`, `shipping`, `returns`.
-
-`run` asks for a plan first and **skips environments with no selected tests**:
-
-```text
-$ terra run --tag returns
-skipping fulfilment — no selected tests
-```
-
----
-
-## Documenting tests
-
-A system test is the only executable description of what the system does, so it is
-worth reading by people who will not read Kotlin. terra generates Markdown from
-annotations on the tests themselves — one file per test class, kept next to them and
-committed, so a change to what a test claims shows up in the same diff as the change
-to the test.
-
-```bash
-./gradlew :demo:testDocs      # or :system-tests:testDocs in your repo
-```
-
-Output: [`demo/docs/`](demo/docs/tests/fulfilment/ReservationFlowST.md).
-
-### Annotating
-
-`@SuiteDoc` on the class, `@TestDoc` on each test. Both are optional — an
-unannotated class produces no file rather than an empty one.
-
-```kotlin
-@Environment("fulfilment")
-@SuiteDoc(
-    description = Desc("Reservation of stock end to end: HTTP, the read model and the topic."),
-    beforeTestSteps = [
-        Step(value = "Insert a SKU with onHand=3", expected = "Stock nothing else in the run can see"),
-    ],
-    labels = [Label(Tags.INVENTORY)],
-)
-class ReservationFlowST : SystemTest() {
-
-    @TestDoc(
-        description = Desc("A reservation debits stock, emits StockMoved and leaves the order RESERVED."),
-        steps = [
-            Step(value = "GET /health on orders-api", expected = "200 — the service is up"),
-            Step(value = "Reserve 2 of the SKU", expected = "StockMoved{delta=-2}; onHand=1 reserved=2"),
-        ],
-        labels = [Label(Tags.REGRESSION), Label(Tags.INVENTORY)],
-    )
-    @SharedEnvTest
-    fun `a reservation moves stock, emits an event and lands in the read model`(ctx: TerraContext) {
-```
-
-Backticked test names carry through to the headings unchanged, which is most of why
-this reads well without a separate title field.
-
-`@Label` takes the same `Tags` constants as `@Tag`, so the two axes stay in step —
-but nothing enforces that, because a label is documentation and a tag is selection.
-
-### Labels
-
-Write `docs/labels/<label>.md` by hand for each label you want explained. Generated
-files link to it, and the generator appends the tests carrying that label below a
-`<!-- generated part -->` marker; everything above the marker is yours and is never
-touched. A label with no file renders as plain text, so it costs nothing to skip.
-
-### Wiring it
-
-The annotations and the Markdown writer come from
-[skodjob/test-metadata-generator](https://github.com/skodjob/test-metadata-generator),
-which ships as a Maven plugin. Only the Mojo is Maven, though: it assembles a
-classpath Gradle already has and finds classes by walking a `src/test/java` tree,
-which is no use for Kotlin. Underneath, `MdGenerator` is plain reflection over
-RUNTIME-retention annotations and takes a `Class<?>`. So terra does not port it —
-[`terra.Docs`](junit/src/main/kotlin/terra/Docs.kt) calls it, with the test runtime
-classpath Gradle assembled. The annotations arrive with `terra:junit`; there is no
-second dependency to declare.
-
-Add to your `system-tests/build.gradle.kts`:
-
-```kotlin
-val testDocs = tasks.register<JavaExec>("testDocs") {
-    dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets["test"].runtimeClasspath
-    mainClass = "terra.Docs"
-    val classesDirs = sourceSets["test"].output.classesDirs
-    val docsDir = layout.projectDirectory.dir("docs").asFile.path
-    argumentProviders.add(CommandLineArgumentProvider { listOf(docsDir, classesDirs.asPath) })
-}
-```
-
-Like `systemTestPlan`, it reads compiled classes and starts nothing. It is safe on a
-plain `./gradlew build` and in CI; re-running it is idempotent, so a job that runs it
-and fails on a dirty tree is enough to keep the docs honest.
+`thenPublish` covers the dependency that answers now and reports later: the caller is
+answered immediately and the event lands on Kafka after the stated delay, through a
+REST proxy declared beside the simulator. Two details are not optional. Derive the id
+**from the request** rather than generating one, because the response and the webhook
+are rendered independently. And the webhook fires **from inside the container network**,
+so its address is a service name and a container port (`Terra.kafkaRestUrl`), never an
+endpoint from the descriptor — those are addresses for the test, not for a service
+calling a service.
 
 ---
 
@@ -818,6 +278,17 @@ terra prune                     reap every terra project no descriptor points at
 Rebuild a service and the fingerprint changes, so `up` starts a *new* project and reaps
 the superseded one. `down` deletes the descriptor first, so nothing can attach
 mid-teardown, then kills the log followers by pid.
+
+With no environment running the test JVM gives you the command that fixes it, not a
+forty-second stall:
+
+```text
+Cannot run: no environment is running for environment 'fulfilment'.
+
+    ./terra up fulfilment
+
+The test JVM never starts containers — that is the harness's job.
+```
 
 ---
 
@@ -858,14 +329,16 @@ health URL, endpoints, capabilities, collector pids.
 ### Results
 
 ```text
-results/<runId>/
-    cluster/  cluster.log  events.jsonl
-    tests/<package>/<Class>/<id>-<name>/
+build/results/<runId>/
+    cluster/<env>/
+        cluster.log        every container's stdout, interleaved and timestamped
+        events.jsonl       container lifecycle events
+    tests/<package>/<Class>/<id>-<name>/      failing tests only
         timeline.txt
-        logs/<service>.log
+        logs/<container>.log
 ```
 
-A failing test writes a **timeline** of what it did, and prints it beside the failure:
+A failing test writes a **timeline** of what it did and prints it beside the failure:
 
 ```text
 ReserveStockST > reserves the last unit exactly once
@@ -879,63 +352,24 @@ ReserveStockST > reserves the last unit exactly once
   ✘  1166ms  kafka     shouldBePublished<ShipmentReady> shipments no matching … within PT2S
 ```
 
-The assertion tells you what was untrue. The timeline tells you what happened before
+The assertion tells you what was untrue; the timeline tells you what happened before
 it, which is usually the diagnosis. Recorded by the probes themselves, so tests write
-nothing to get it.
+nothing to get it. Logs and container events are collected from the moment the
+environment is up — not after a failure, by which time the interesting seconds have
+scrolled past. Every passing test also asserts that no service logged an unexpected
+error, against one short reviewable allowlist.
 
-Logs and container events are collected from the moment the environment is up — not
-after a failure, by which time the interesting seconds have scrolled past. Every
-passing test also asserts that no service logged an unexpected error; the allowlist is
-one short reviewable file.
+### Build wiring
 
----
-
-## Caching
-
-| Layer | State | Buys |
-|---|---|---|
-| **The environment itself** | attach-or-start | **~40 s → ~1 s** |
-| Isolated Projects + configuration cache | on | ~12 s → ~2 s per invocation |
-| Build cache (local) | on | `compileKotlin FROM-CACHE` |
-| Kotlin incremental, daemon, dependency cache | on | — |
-| **`systemTest` task output** | **must stay off** | — |
-
-Gradle 9.7 with Isolated Projects: no project may configure another, so the root build
-file is empty and shared decisions live in `settings.gradle.kts`.
-
-`terra` passes `TERRA_ENV`/`TERRA_TAGS` as environment variables read at
-configuration time, which makes each value a separate cache key. Keep one entry per
-combination you use:
-
-```properties
-org.gradle.configuration-cache.entries-per-key=8
-```
+The test side needs three Gradle tasks, all of which read compiled classes and start
+nothing: `systemTest` (with `outputs.upToDateWhen { false }`, because a system test's
+real input is a live environment that Gradle cannot hash), `systemTestPlan`
+(`terra.Discover` — discovery without execution, so `run --tag x` knows which
+environments it needs) and `testDocs` (`terra.Docs`). All three pass the `TERRA_*`
+variables through. [`demo/build.gradle.kts`](demo/build.gradle.kts) is the reference
+copy.
 
 ---
-
-## Not built yet
-
-Additive; none of it changes anything above:
-
-- **Golden event histories** — commit the scrubbed events a scenario emits and diff
-  them. The only mechanism that tests compatibility *between versions of your own
-  services*. Add it the first time a consumer team is broken by an event change.
-- **`@Requires` as an annotation** rather than a runtime call, so a topology that
-  cannot satisfy a test is skipped before anything starts.
-- **System snapshots in failure artifacts** — the failing test's Kafka window, its
-  documents and its simulator rules, beside the timeline.
-- **Distributed tracing** — an OTel collector in the topology and the Java agent on the
-  services would turn the timeline into a call tree through the application. Worth it
-  only once the services are instrumented for production anyway.
-- **Generated test documentation** from annotations, once nobody can name what the
-  suite covers.
-- **Duration-weighted sharding**; `hash % n` until you have history worth using.
-- **Long-lived shared infrastructure** on an external network, if per-environment
-  Kafka/Mongo restarts start to hurt.
-- **`X-Test-Id` propagation** through the services. Not required by anything above;
-  it would enable header-scoped mock rules and make a 50 MB cluster log greppable by
-  test. If the services already run distributed tracing this is configuration rather
-  than code.
 
 ## Invariants
 

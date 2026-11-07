@@ -62,10 +62,6 @@ class TerraContext(
             .also { probe -> opened += AutoCloseable { probe.reset() } }
     }
 
-    // Fill this in against your own client. It takes an endpoint and the test's id
-    // header; nothing else about the environment should reach a test.
-    // val api: ApiClient by lazy { ApiClient(endpoint("gateway"), ids.header).also { opened += it } }
-
     override fun close() {
         opened.forEach { runCatching { it.close() } }
         opened.clear()
@@ -87,19 +83,7 @@ class TestIds(private val runId: String, private val testId: String) {
 
     /**
      * An identifier of your own kind that nothing else in the run can collide with.
-     *
-     * Terra does not know what your domain calls things, so it generates the unique
-     * part and you name the kind. Declare the vocabulary once, next to your tags:
-     *
-     * ```kotlin
-     * // system-tests/src/test/kotlin/tests/Ids.kt
-     * fun TestIds.order(n: Int = 1) = id("ORD", n)
-     * fun TestIds.sku(n: Int = 1) = id("SKU", n)
-     * fun TestIds.customer(n: Int = 1) = id("CUS", n)
-     * ```
-     *
-     * and then every test reads `ctx.ids.order()`, with the kind checked by the
-     * compiler rather than spelled out as a string at each call site.
+     * Terra generates the unique part; projects name the kinds as extensions.
      *
      * [n] distinguishes several of the same kind within one test, and is explicit
      * rather than a counter so a rerun produces the same ids — which matters when you
